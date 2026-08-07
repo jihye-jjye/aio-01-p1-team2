@@ -1,0 +1,219 @@
+﻿# 02_supabase-ai-backend 공통 패키지 목록
+#
+# 이 파일은 02_supabase-ai-backend 전체 과정에서 사용하는 공통 .venv에 설치할 패키지를 모아 둔 파일입니다.
+# 하위 폴더마다 requirements.txt를 따로 만들지 않고, 최상위 requirements.txt 하나로 관리합니다.
+#
+# 설치 위치:
+#   C:\aidev\02_supabase-ai-backend
+#
+# 설치 명령:
+#   python -m pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# 이 과정의 기본 방향:
+# - 01_python-git-foundation/01_python-basic은 Python 표준 라이브러리 중심이라 외부 패키지가 거의 필요하지 않습니다.
+# - 01_python-git-foundation/02_python-advanced부터 httpx, pytest 같은 외부 패키지를 사용합니다.
+# - 01_fastapi-backend부터 FastAPI, Pydantic, Uvicorn을 본격적으로 사용합니다.
+# - 02_llm-api-integration에서는 Gemini API를 기본으로 사용합니다.
+# - 처음 실제 Gemini 호출은 google-genai SDK로 쉽게 실행하고, REST 호출은 HTTP 구조를 이해하는 보충 예제로 사용합니다.
+# - OpenAI 예제는 선택/비교 실습으로 유지합니다.
+# - 03_supabase-db-and-auth 이후에는 Supabase와 Upstash Redis REST 호출 흐름을 다룹니다.
+# - Docker, 로컬 PostgreSQL, 로컬 Redis 운영은 이 과정이 아니라 07_multi-agent-service-ops에서 다룹니다.
+
+
+# -----------------------------------------------------------------------------
+# FastAPI 백엔드 서버 실행 패키지
+# -----------------------------------------------------------------------------
+
+# FastAPI 웹 API 서버를 만들기 위한 핵심 프레임워크입니다.
+# 사용 위치:
+# - 01_fastapi-backend: FastAPI 설치, 라우팅, 요청/응답, 오류 처리 실습
+# - 02_llm-api-integration: FastAPI endpoint에서 mock/Gemini/OpenAI 응답 연결
+# - 03_supabase-db-and-auth: FastAPI와 Supabase 연동
+# - 99_final-backend-project: 최종 백엔드 프로젝트
+fastapi==0.136.3
+
+# FastAPI 앱을 실제 개발 서버로 실행하는 ASGI 서버입니다.
+# 예: uvicorn main:app --reload
+# 사용 위치:
+# - 01_fastapi-backend 이후의 모든 FastAPI 실행 실습
+uvicorn==0.49.0
+
+# FastAPI가 내부적으로 사용하는 ASGI 기반 웹 프레임워크입니다.
+# 직접 import해서 쓰는 경우는 적지만 FastAPI 실행에 필요한 의존 패키지입니다.
+# 사용 위치:
+# - 01_fastapi-backend 이후 FastAPI 실행 환경
+starlette==1.2.1
+
+# Uvicorn/Starlette/FastAPI가 비동기 서버 동작을 처리할 때 사용하는 공통 비동기 라이브러리입니다.
+# async/await, 비동기 요청 처리 기반에서 함께 사용됩니다.
+# 사용 위치:
+# - 01_python-git-foundation/02_python-advanced: 비동기 개념 이해와 연결
+# - 01_fastapi-backend: async endpoint 실행
+# - 02_llm-api-integration: 비동기 API 호출 구조 이해
+anyio==4.13.0
+
+# Uvicorn이 HTTP 통신을 처리할 때 사용하는 저수준 HTTP 라이브러리입니다.
+# 직접 코딩에서 사용하는 패키지는 아니지만 FastAPI 서버 실행에 필요합니다.
+# 사용 위치:
+# - 01_fastapi-backend 이후 uvicorn 서버 실행
+h11==0.16.0
+
+# Uvicorn 명령줄 실행에 사용되는 CLI 보조 라이브러리입니다.
+# 예: uvicorn main:app --reload 명령을 처리할 때 내부적으로 사용됩니다.
+# 사용 위치:
+# - 01_fastapi-backend 이후 서버 실행
+click==8.4.1
+
+# Windows 터미널에서 색상 출력이 안정적으로 보이도록 돕는 패키지입니다.
+# click, pytest 등 명령줄 도구 출력과 함께 사용될 수 있습니다.
+# 사용 위치:
+# - Windows PowerShell/터미널 기반 실습 전체
+colorama==0.4.6
+
+
+# -----------------------------------------------------------------------------
+# 요청/응답 데이터 검증 패키지
+# -----------------------------------------------------------------------------
+
+# FastAPI 요청 Body와 응답 구조를 정의하고 검증하는 핵심 패키지입니다.
+# 사용 위치:
+# - 01_fastapi-backend/03_pydantic-and-response
+# - 02_llm-api-integration: LLM 요청/응답 모델 구성
+# - 03_supabase-db-and-auth: Supabase 연동 요청/응답 모델 구성
+# - 99_final-backend-project: 최종 API 요청/응답 모델
+pydantic==2.13.4
+
+# Pydantic v2가 내부적으로 사용하는 고성능 검증 엔진입니다.
+# 직접 import해서 쓰는 경우는 거의 없지만 pydantic 실행에 필요합니다.
+# 사용 위치:
+# - Pydantic 모델을 사용하는 모든 FastAPI 실습
+pydantic_core==2.46.4
+
+# Pydantic/FastAPI에서 타입 힌트의 추가 정보를 처리할 때 사용되는 보조 패키지입니다.
+# 직접 작성하는 예제보다 내부 의존성으로 사용됩니다.
+# 사용 위치:
+# - 01_fastapi-backend 이후 Pydantic/FastAPI 검증 흐름
+annotated-types==0.7.0
+
+# FastAPI/Pydantic 생태계에서 타입 주석 기반 문서화와 검증 보조에 사용되는 패키지입니다.
+# 직접 사용하는 예제는 없지만 FastAPI 최신 버전의 의존성으로 설치됩니다.
+# 사용 위치:
+# - FastAPI/Pydantic 기반 API 문서화와 검증 흐름
+annotated-doc==0.0.4
+
+# Python 버전에 따라 최신 typing 기능을 보완하는 패키지입니다.
+# list[str], Annotated, Literal 같은 타입 힌트와 관련된 라이브러리들이 내부적으로 사용합니다.
+# 사용 위치:
+# - 01_python-git-foundation/02_python-advanced: 타입 힌트 이해
+# - 01_fastapi-backend 이후 Pydantic/FastAPI 타입 검증
+typing_extensions==4.15.0
+
+# 런타임에서 타입 정보를 검사할 때 사용하는 보조 패키지입니다.
+# 직접 실습 코드에서 다루기보다는 Pydantic/FastAPI 내부 동작에 필요합니다.
+# 사용 위치:
+# - Pydantic/FastAPI 타입 검증 흐름
+typing-inspection==0.4.2
+
+
+# -----------------------------------------------------------------------------
+# HTTP 클라이언트와 외부 API 호출 패키지
+# -----------------------------------------------------------------------------
+
+# Python에서 HTTP 요청을 보내기 위한 클라이언트 패키지입니다.
+# 동기 방식과 비동기 방식 모두 지원합니다.
+# 사용 위치:
+# - 01_python-git-foundation/02_python-advanced/07_api-external-data: 외부 날씨 API sync/async 호출
+# - 01_fastapi-backend/04_async-and-external-api: 외부 API 호출 구조
+# - 02_llm-api-integration: 외부 API 호출 구조와 HTTP 클라이언트 개념 확인
+# - 03_supabase-db-and-auth: Upstash Redis REST API 호출 예제
+httpx==0.27.2
+
+# httpx가 내부적으로 사용하는 저수준 HTTP 처리 패키지입니다.
+# 직접 import하지 않지만 httpx 요청 처리에 필요합니다.
+# 사용 위치:
+# - httpx를 사용하는 모든 외부 API 호출 실습
+httpcore==1.0.9
+
+# HTTPS 인증서 검증에 필요한 인증서 묶음입니다.
+# 외부 API나 Supabase/Upstash/Gemini 같은 HTTPS 서비스 호출 시 사용됩니다.
+# 사용 위치:
+# - 01_python-git-foundation/02_python-advanced 외부 API 호출
+# - 02_llm-api-integration 외부 HTTPS API 호출
+# - 03_supabase-db-and-auth Supabase/Upstash 연동
+certifi==2026.5.20
+
+# 국제화 도메인 이름 처리를 위한 패키지입니다.
+# httpx/httpcore가 URL을 안전하게 처리할 때 내부적으로 사용합니다.
+# 사용 위치:
+# - httpx 기반 외부 API 호출 전체
+idna==3.18
+
+
+# -----------------------------------------------------------------------------
+# 환경 변수 관리 패키지
+# -----------------------------------------------------------------------------
+
+# .env 파일에 적은 환경 변수를 Python 코드에서 읽어 오기 위한 패키지입니다.
+# API key, Supabase URL, Redis token 같은 값을 코드에 직접 쓰지 않기 위해 사용합니다.
+# 사용 위치:
+# - 02_llm-api-integration: GEMINI_API_KEY, OPENAI_API_KEY 읽기
+# - 03_supabase-db-and-auth: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY 읽기
+# - 90_ai-assisted-code-review-and-debugging: 환경 변수 오류 디버깅 lab
+python-dotenv==1.2.2
+
+
+# -----------------------------------------------------------------------------
+# Supabase 연동 패키지
+# -----------------------------------------------------------------------------
+
+# Python에서 Supabase 프로젝트에 연결하기 위한 공식 클라이언트 패키지입니다.
+# 테이블 insert/select/update/delete, Auth 연동 흐름을 실습할 때 사용합니다.
+# 사용 위치:
+# - 03_supabase-db-and-auth: Supabase 프로젝트, 테이블, CRUD, Auth/RLS
+# - 99_final-backend-project: 최종 백엔드 프로젝트 데이터 저장
+supabase==2.10.0
+
+# 시간대 데이터를 다루기 위한 패키지입니다.
+# Supabase/PostgreSQL의 created_at, timestamptz 같은 시간 데이터 처리와 함께 설치될 수 있습니다.
+# 직접 사용하는 예제는 많지 않지만 날짜/시간 관련 의존성에서 필요할 수 있습니다.
+# 사용 위치:
+# - 03_supabase-db-and-auth 이후 created_at, 로그 시간 확인 흐름
+tzdata==2026.2
+
+
+# -----------------------------------------------------------------------------
+# 테스트와 코드 품질 패키지
+# -----------------------------------------------------------------------------
+
+# Python 테스트를 작성하고 실행하기 위한 테스트 프레임워크입니다.
+# 사용 위치:
+# - 01_python-git-foundation/02_python-advanced/08_testing-code-quality
+# - 01_python-git-foundation/02_python-advanced/99_advanced-mini-project
+# - 01_fastapi-backend/05_error-handling-and-testing
+# - 90_ai-assisted-code-review-and-debugging: 수정 후 실행 검증 기준
+pytest==8.4.2
+
+
+# -----------------------------------------------------------------------------
+# 선택 LLM API 패키지
+# -----------------------------------------------------------------------------
+
+# Gemini API를 Python SDK 방식으로 호출하기 위한 Google Gen AI SDK입니다.
+# REST 방식보다 코드가 짧아 초보자가 처음 실제 호출을 성공시키기에 좋습니다.
+# 최신 google-genai 2.x는 httpx>=0.28.1을 요구하지만,
+# 현재 supabase==2.10.0은 httpx<0.28을 요구합니다.
+# 따라서 이 과정에서는 Supabase와 함께 설치 가능한 google-genai==1.2.0을 사용합니다.
+# 사용 위치:
+# - 02_llm-api-integration/03_single-turn-call: 02_gemini_sdk_single_turn.py
+# - 02_llm-api-integration/04_multi-turn-call: 이후 SDK 방식 멀티턴 호출로 확장 가능
+# - 02_llm-api-integration/05_fastapi-llm-endpoint: FastAPI endpoint에서 Gemini 호출로 확장 가능
+google-genai==1.2.0
+
+# OpenAI API를 Python에서 호출하기 위한 공식 패키지입니다.
+# 이 과정에서는 Gemini API를 기본으로 사용하고, OpenAI는 선택/비교 실습으로 유지합니다.
+# 사용 위치:
+# - 02_llm-api-integration/03_single-turn-call: OpenAI 단일 질문 선택 예제
+# - 02_llm-api-integration/04_multi-turn-call: OpenAI 멀티턴 선택 예제
+# - 02_llm-api-integration/05_fastapi-llm-endpoint: OpenAI endpoint 선택 예제
+openai==1.57.4
