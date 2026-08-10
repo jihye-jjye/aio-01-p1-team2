@@ -1,18 +1,19 @@
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
+# 실제 환경변수
 .env
 .env.*
 !.env.example
 
-.streamlit/secrets.toml
-*.log
+# Python 가상환경
+.venv/
+.venv_test/
 
-# VS Code 개인 설정
-.vscode/*
-!.vscode/
-!.vscode/settings.json
+# Python 캐시
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Streamlit 비밀 설정
+.streamlit/secrets.toml
+
+# 실행 로그
+*.log
