@@ -112,9 +112,11 @@ class RichRenderer:
                     "1. 프로필 보기\n"
                     "2. 로드맵 제안 생성·검토\n"
                     "3. 활성 로드맵\n"
-                    "4. 전체 채용 공고\n"
-                    "5. 프로필 재온보딩\n"
-                    "6. 다른 계정으로 로그인\n"
+                    "4. 오늘 퀘스트\n"
+                    "5. 전체 채용 공고\n"
+                    "6. 공지 사항\n"
+                    "7. 프로필 재온보딩\n"
+                    "8. 다른 계정으로 로그인\n"
                     "0. 종료"
                 ),
                 title=Text("메인 메뉴"),
@@ -130,9 +132,11 @@ class RichRenderer:
                     "1. 프로필 보기\n"
                     "2. 로드맵 제안 생성·검토\n"
                     "3. 활성 로드맵\n"
-                    "4. 전체 채용 공고\n"
-                    "5. 프로필 재온보딩\n"
-                    "6. 다른 계정으로 로그인\n"
+                    "4. 오늘 퀘스트\n"
+                    "5. 전체 채용 공고\n"
+                    "6. 공지 사항\n"
+                    "7. 프로필 재온보딩\n"
+                    "8. 다른 계정으로 로그인\n"
                     "0. 종료\n"
                     "/help  도움말\n"
                     "/quit  종료"
@@ -178,6 +182,146 @@ class RichRenderer:
                 Text(_display(saved_job.get("source_url"))),
             )
         self.console.print(table)
+
+    def saved_job_recommendation(self, recommendation: dict[str, Any] | None) -> None:
+        if recommendation is None:
+            self.console.print(
+                Panel(
+                    Text("추천 가능한 채용 공고가 없습니다."),
+                    title=Text("희망 환경 맞춤 추천"),
+                    border_style="yellow",
+                )
+            )
+            return
+
+        job = _mapping(recommendation.get("job"))
+        matched_terms = _items(recommendation.get("matched_terms"))
+        matched_text = ", ".join(str(term) for term in matched_terms) or "직접 일치 단서 없음"
+        summary = Text()
+        summary.append(
+            f"희망 환경: {_display(recommendation.get('preferred_environment'))}\n"
+        )
+        summary.append(f"일치도 {_display(recommendation.get('match_score'))}점\n")
+        summary.append(f"일치 단서: {matched_text}")
+        self.console.print(
+            Panel(
+                summary,
+                title=Text("희망 환경 맞춤 추천"),
+                border_style="green",
+            )
+        )
+
+        table = Table(show_header=False, box=None)
+        table.add_column(Text("항목"), style="bold")
+        table.add_column(Text("내용"), overflow="fold")
+        for label, value in (
+            ("회사", job.get("company_name")),
+            ("직무", job.get("job_title")),
+            ("마감일", job.get("deadline")),
+            ("지원 URL", job.get("source_url")),
+        ):
+            table.add_row(Text(label), Text(_display(value)))
+        self.console.print(table)
+
+    def notices(self, notices: list[dict[str, Any]]) -> None:
+        if not notices:
+            self.console.print(
+                Panel(
+                    Text("게시 중인 공지가 없습니다."),
+                    title=Text("공지 사항"),
+                    border_style="yellow",
+                )
+            )
+            return
+
+        for index, notice in enumerate(notices, start=1):
+            pinned = "고정 · " if notice.get("is_pinned") is True else ""
+            self.console.print(
+                Panel(
+                    Text(_display(notice.get("content"))),
+                    title=Text(
+                        f"{pinned}{_display(notice.get('title'))} "
+                        f"({_display(notice.get('published_at'))})"
+                    ),
+                    border_style="cyan",
+                )
+            )
+            self.console.print(
+                Text(
+                    f"번호 {index} · id {_display(notice.get('id'))} · "
+                    f"만료 {_display(notice.get('expires_at'))}"
+                )
+            )
+
+    def today_quests(self, view: dict[str, Any]) -> None:
+        plan_title = view.get("plan_title")
+        if plan_title is None:
+            self.console.print(
+                Panel(
+                    Text("진행 중인 활성 계획이 없어 오늘 퀘스트가 없습니다."),
+                    title=Text("오늘 퀘스트"),
+                    border_style="yellow",
+                )
+            )
+            self.console.print(
+                Text(f"날짜 {_display(view.get('date'))} · 누적 EXP {_display(view.get('user_exp'))}")
+            )
+            return
+
+        self.console.print(
+            Panel(
+                Text(_display(plan_title)),
+                title=Text("오늘 퀘스트"),
+                border_style="green",
+            )
+        )
+        self.console.print(
+            Text(
+                f"날짜 {_display(view.get('date'))} · "
+                f"완료 {_display(view.get('completed_count'))}/"
+                f"{_display(view.get('total_count'))} · "
+                f"{_display(view.get('percent'))}% · "
+                f"일일 달성 {'달성' if view.get('achieved') is True else '미달성'} · "
+                f"획득 EXP {_display(view.get('earned_exp'))} · "
+                f"누적 EXP {_display(view.get('user_exp'))}"
+            )
+        )
+
+        quests = Table(title=Text("오늘 과제"), show_lines=True)
+        quests.add_column(Text("번호"), style="bold", justify="right")
+        quests.add_column(Text("순서"), justify="right")
+        quests.add_column(Text("상태"))
+        quests.add_column(Text("제목"), overflow="fold")
+        quests.add_column(Text("설명"), overflow="fold")
+        quests.add_column(Text("예정 시각"))
+        quests.add_column(Text("완료 시각"))
+        for number, task_value in enumerate(_items(view.get("quests")), start=1):
+            task = _mapping(task_value)
+            quests.add_row(
+                Text(f"{number}번"),
+                Text(f"{_display(task.get('slot'))}번"),
+                Text(_display(task.get("status"))),
+                Text(_display(task.get("title"))),
+                Text(_display(task.get("description"))),
+                Text(_display(task.get("scheduled_at"))),
+                Text(_display(task.get("completed_at"))),
+            )
+        self.console.print(quests)
+
+    def today_quest_help(self) -> None:
+        self.console.print(
+            Panel(
+                Text(
+                    "/done N  표시 번호 N 과제 완료\n"
+                    "/undo N  표시 번호 N 과제 미완료로 되돌리기\n"
+                    "/back  메인 메뉴\n"
+                    "/help  도움말\n"
+                    "/quit  종료"
+                ),
+                title=Text("오늘 퀘스트 도움말"),
+                border_style="blue",
+            )
+        )
 
     def proposal(self, proposal: dict) -> None:
         self.console.print(

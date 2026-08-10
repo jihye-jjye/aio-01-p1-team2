@@ -64,7 +64,7 @@ OPENAPI_TAGS = [
     },
     {
         "name": "saved-jobs",
-        "description": "모든 인증 사용자가 공유하는 저장 공고 조회",
+        "description": "모든 인증 사용자가 공유하는 저장 공고 조회와 희망 환경 기반 추천",
     },
 ]
 

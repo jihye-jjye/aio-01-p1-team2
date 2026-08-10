@@ -19,3 +19,12 @@ class SavedJobView(BaseModel):
     extracted_data: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+
+
+class SavedJobRecommendationView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preferred_environment: str = Field(min_length=1)
+    match_score: int = Field(ge=0, le=100)
+    matched_terms: list[str]
+    job: SavedJobView

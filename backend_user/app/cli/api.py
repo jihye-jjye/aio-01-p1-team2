@@ -27,8 +27,10 @@ class ApiPort(Protocol):
     async def login(self, login_id: str, login_pw: str) -> None: ...
     async def profile(self) -> dict[str, Any]: ...
     async def saved_jobs(self) -> list[dict[str, Any]]: ...
+    async def saved_job_recommendation(self) -> dict[str, Any] | None: ...
     async def start(self) -> dict[str, Any]: ...
     async def message(self, session_id: str, text: str) -> dict[str, Any]: ...
+    async def onboarding_result(self, session_id: str) -> dict[str, Any]: ...
     async def confirm(self, session_id: str, revision: int) -> dict[str, Any]: ...
     async def restart(self, session_id: str) -> dict[str, Any]: ...
     async def create_plan_proposal(self, request_id: str) -> dict[str, Any]: ...
@@ -51,6 +53,13 @@ class ApiPort(Protocol):
         status: Literal["pending", "completed"],
     ) -> dict[str, Any]: ...
     async def complete_plan(self, plan_id: str) -> dict[str, Any]: ...
+    async def notices(self) -> list[dict[str, Any]]: ...
+    async def today_quests(self) -> dict[str, Any]: ...
+    async def set_today_quest_status(
+        self,
+        task_id: str,
+        status: Literal["pending", "completed"],
+    ) -> dict[str, Any]: ...
     def clear_access_token(self) -> None: ...
     async def aclose(self) -> None: ...
 
@@ -97,6 +106,14 @@ class CoachApiClient:
             raise ApiError(502, "INVALID_RESPONSE", "공고 응답 형식을 확인할 수 없습니다.")
         return [dict(item) for item in payload]
 
+    async def saved_job_recommendation(self) -> dict[str, Any] | None:
+        payload = await self._request("GET", "/api/v1/saved-jobs/recommendation")
+        if payload is None:
+            return None
+        if not isinstance(payload, dict) or not isinstance(payload.get("job"), dict):
+            raise ApiError(502, "INVALID_RESPONSE", "추천 공고 응답 형식을 확인할 수 없습니다.")
+        return dict(payload)
+
     def clear_access_token(self) -> None:
         self._access_token = None
 
@@ -112,12 +129,17 @@ class CoachApiClient:
             payload={"request_id": str(uuid4()), "text": text},
         )
 
+    async def onboarding_result(self, session_id: str) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            f"/api/v1/onboarding/sessions/{session_id}/result",
+        )
+
     async def confirm(self, session_id: str, revision: int) -> dict[str, Any]:
         return await self._state_change(
-            f"/api/v1/onboarding/sessions/{session_id}/messages",
+            f"/api/v1/onboarding/sessions/{session_id}/confirm",
             payload={
                 "request_id": str(uuid4()),
-                "action": "onboarding.confirm",
                 "expected_revision": revision,
             },
         )
@@ -194,6 +216,26 @@ class CoachApiClient:
 
     async def complete_plan(self, plan_id: str) -> dict[str, Any]:
         return await self._request("POST", f"/api/v1/plans/{plan_id}/complete")
+
+    async def notices(self) -> list[dict[str, Any]]:
+        payload = await self._request("GET", "/api/v1/notices")
+        if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+            raise ApiError(502, "INVALID_RESPONSE", "공지 응답 형식을 확인할 수 없습니다.")
+        return [dict(item) for item in payload]
+
+    async def today_quests(self) -> dict[str, Any]:
+        return await self._request("GET", "/api/v1/quests/today")
+
+    async def set_today_quest_status(
+        self,
+        task_id: str,
+        status: Literal["pending", "completed"],
+    ) -> dict[str, Any]:
+        return await self._request(
+            "PATCH",
+            f"/api/v1/quests/{task_id}",
+            json={"status": status},
+        )
 
     @staticmethod
     def _window_params(*, start_on: str | None, days: int) -> dict[str, str | int]:
