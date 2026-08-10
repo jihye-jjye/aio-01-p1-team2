@@ -1,13 +1,20 @@
 import streamlit as st
 
 from tab_pages.start.home_tab import show_home
-from tab_pages.start.signup_tab import show_signup
+from core.auth import login
 
+st.subheader("관리자 로그인")
 
-home_tab, signup_tab = st.tabs(["홈", "회원가입"])
+with st.form("signup_form"):
+    admin_id = st.text_input("아이디", value="admin")
+    password = st.text_input("패스워드", type="password", value="admin123")
+    login_autho = st.checkbox("로그인 상태 유지")
+    submitted = st.form_submit_button("로그인", use_container_width=True, type="primary", )
 
-with home_tab:
-    show_home()
-
-with signup_tab:
-    show_signup()
+    if submitted:
+        if admin_id and password:
+            response = login(admin_id, password)
+            if response and response["access_token"] is not None:
+                st.switch_page("app_pages/home.py")
+        else:
+            st.warning("모든 항목을 입력해 주세요.")

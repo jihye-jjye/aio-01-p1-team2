@@ -1,6 +1,6 @@
 import streamlit as st  # Python 코드로 웹 화면을 만들기 위해 Streamlit을 st라는 별칭으로 가져옵니다.
 from clients.chat_client import call_gemini
-from frontend_user.core.auth_sample import is_logged_in
+from core.auth_sample import is_logged_in
 from core.api_client import BackendAPIError
 
 def create_reply(prompt):  # 요청 본문으로 받은 데이터를 새 항목으로 저장합니다.

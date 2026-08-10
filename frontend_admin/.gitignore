@@ -17,4 +17,6 @@ __pycache__/
 !.vscode/
 !.vscode/settings.json
 
+# test 파일
 app_test.py
+

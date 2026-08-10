@@ -4,6 +4,7 @@ import streamlit as st
 def init_state() -> None:
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
+        # st.session_state.logged_in = True
     if "user_id" not in st.session_state:
         st.session_state.user_id = ""
 
