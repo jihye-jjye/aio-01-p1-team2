@@ -12,7 +12,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
-
 # 이 파일은 다음 위치에 있습니다.
 # 02_supabase-ai-backend/03_supabase-db-and-auth/02_supabase-table-and-crud/supabase_client.py
 # parents[2]는 02_supabase-ai-backend 폴더입니다.
@@ -30,10 +29,14 @@ def get_required_env(name: str) -> str:
     value = os.getenv(name, "").strip()
 
     if not value:
-        raise RuntimeError(f"{name} 값이 없습니다. C:\\aidev\\02_supabase-ai-backend\\.env 파일을 확인하세요.")
+        raise RuntimeError(
+            f"{name} 값이 없습니다. C:\\aidev\\02_supabase-ai-backend\\.env 파일을 확인하세요."
+        )
 
     if value.startswith(("your-", "https://your-")):
-        raise RuntimeError(f"{name} 값이 예시 값입니다. Supabase Dashboard에서 실제 값을 복사해 넣어 주세요.")
+        raise RuntimeError(
+            f"{name} 값이 예시 값입니다. Supabase Dashboard에서 실제 값을 복사해 넣어 주세요."
+        )
 
     return value
 

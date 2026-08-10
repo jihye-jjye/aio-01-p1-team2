@@ -23,3 +23,11 @@ sample.txt
 jmlee.py
 aa.py
 bb.py
+
+/temp2/
+/.superpowers
+/tests/
+/docs/
+TESTING.md
+uv.lock
+
