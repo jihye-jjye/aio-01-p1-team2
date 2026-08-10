@@ -329,11 +329,16 @@ class CliApp:
                     return result
                 continue
             if choice == "6":
-                result = await self._notices_entry()
+                result = await self._recommend_saved_job_entry()
                 if isinstance(result, ReloginRequired):
                     return result
                 continue
             if choice == "7":
+                result = await self._notices_entry()
+                if isinstance(result, ReloginRequired):
+                    return result
+                continue
+            if choice == "8":
                 result = await self._reonboard()
                 if isinstance(result, ProfileReady):
                     profile = result.profile
@@ -341,7 +346,7 @@ class CliApp:
                 if isinstance(result, (int, ReloginRequired)):
                     return result
                 continue
-            if choice == "8":
+            if choice == "9":
                 self._proposal_request_id = None
                 return SwitchAccount()
             self.renderer.main_menu_help()
@@ -1014,7 +1019,7 @@ class CliApp:
                         if _pending_matches_profile(pending, profile):
                             self.renderer.success(profile)
                             recommendation_result = (
-                                await self._recommend_saved_job_after_onboarding()
+                                await self._recommend_saved_job_entry()
                             )
                             if isinstance(recommendation_result, ReloginRequired):
                                 return ReloginRequired(pending)
@@ -1024,7 +1029,7 @@ class CliApp:
                         )
                 elif _pending_matches_profile(pending, profile):
                     self.renderer.success(profile)
-                    recommendation_result = await self._recommend_saved_job_after_onboarding()
+                    recommendation_result = await self._recommend_saved_job_entry()
                     if isinstance(recommendation_result, ReloginRequired):
                         return ReloginRequired(pending)
                     return ProfileReady(profile)
@@ -1043,7 +1048,7 @@ class CliApp:
                 continue
             self.renderer.verification_help()
 
-    async def _recommend_saved_job_after_onboarding(self) -> ReloginRequired | None:
+    async def _recommend_saved_job_entry(self) -> ReloginRequired | None:
         try:
             with self.renderer.status("희망 환경 맞춤 공고 추천 중..."):
                 recommendation = await self.api.saved_job_recommendation()

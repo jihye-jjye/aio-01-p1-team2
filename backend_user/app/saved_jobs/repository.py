@@ -3,6 +3,7 @@ from uuid import UUID
 from psycopg_pool import AsyncConnectionPool
 
 from app.api.errors import ProfileNotFoundError
+from app.profiles.models import ProfileOnboardingData
 from app.saved_jobs.models import SavedJobView
 
 
@@ -10,11 +11,18 @@ class PsycopgSavedJobRepository:
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self._pool = pool
 
-    async def get_preferred_environment(self, *, user_id: UUID) -> str:
+    async def get_recommendation_profile(
+        self,
+        *,
+        user_id: UUID,
+    ) -> ProfileOnboardingData:
         async with self._pool.connection() as connection:
             cursor = await connection.execute(
                 """
-                select preferred_environment
+                select
+                  target_role, skills, experience_summary, target_date,
+                  target_company, preferred_environment, daily_notification_time,
+                  assistant_style
                 from app.profiles
                 where user_id = %(user_id)s
                   and onboarding_completed_at is not null
@@ -24,7 +32,7 @@ class PsycopgSavedJobRepository:
             row = await cursor.fetchone()
         if row is None:
             raise ProfileNotFoundError
-        return str(row["preferred_environment"])
+        return ProfileOnboardingData.model_validate(row)
 
     async def list_all(self) -> list[SavedJobView]:
         async with self._pool.connection() as connection:

@@ -14,8 +14,11 @@ router = APIRouter(prefix="/saved-jobs", tags=["saved-jobs"])
 @router.get(
     "/recommendation",
     response_model=SavedJobRecommendationView | None,
-    summary="희망 환경 기반 공고 추천",
-    description="현재 사용자의 온보딩 희망 환경과 가장 많은 단서가 일치하는 공고를 반환합니다.",
+    summary="온보딩 전체 프로필 기반 공고 추천",
+    description=(
+        "현재 사용자의 온보딩 전체 프로필과 마감되지 않은 공고를 Gemini가 비교합니다. "
+        "Gemini를 사용할 수 없으면 희망 환경 키워드 방식으로 대체합니다."
+    ),
     responses={
         401: {"model": APIErrorEnvelope, "description": "`UNAUTHORIZED`: 인증 실패"},
         404: {"model": APIErrorEnvelope, "description": "`PROFILE_NOT_FOUND`: 온보딩 프로필 없음"},

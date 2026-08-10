@@ -22,6 +22,7 @@ from app.db.plan_repository import PsycopgPlanProposalRepository
 from app.db.repositories import PsycopgAccountRepository, PsycopgProfileRepository
 from app.gemini.adapter import GeminiOnboardingAdapter
 from app.gemini.errors import GeminiError
+from app.gemini.job_recommendation_adapter import GeminiSavedJobRecommendationAdapter
 from app.gemini.plan_adapter import (
     GeminiProfilePlanAdapter,
 )
@@ -191,9 +192,24 @@ def get_notice_service(
 
 
 def get_saved_job_service(
+    settings: Annotated[Settings, Depends(get_settings)],
     pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
+    redis: Annotated[Redis, Depends(get_redis)],
+    gemini_client: Annotated[Any, Depends(get_gemini_async_client)],
 ) -> SavedJobService:
-    return SavedJobService(PsycopgSavedJobRepository(pool))
+    structured = GeminiStructuredClient(
+        client=gemini_client,
+        limiter=RedisGeminiRateLimiter(redis),
+        model=settings.gemini_model,
+        api_version=settings.gemini_api_version,
+        timeout_seconds=settings.gemini_timeout_seconds,
+        max_attempts=settings.gemini_max_attempts,
+    )
+    return SavedJobService(
+        PsycopgSavedJobRepository(pool),
+        recommender=GeminiSavedJobRecommendationAdapter(structured),
+        today_provider=lambda: datetime.now(ZoneInfo("Asia/Seoul")).date(),
+    )
 
 
 def get_current_user(

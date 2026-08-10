@@ -114,9 +114,10 @@ class RichRenderer:
                     "3. 활성 로드맵\n"
                     "4. 오늘 퀘스트\n"
                     "5. 전체 채용 공고\n"
-                    "6. 공지 사항\n"
-                    "7. 프로필 재온보딩\n"
-                    "8. 다른 계정으로 로그인\n"
+                    "6. 온보딩 기반 추천 공고\n"
+                    "7. 공지 사항\n"
+                    "8. 프로필 재온보딩\n"
+                    "9. 다른 계정으로 로그인\n"
                     "0. 종료"
                 ),
                 title=Text("메인 메뉴"),
@@ -134,9 +135,10 @@ class RichRenderer:
                     "3. 활성 로드맵\n"
                     "4. 오늘 퀘스트\n"
                     "5. 전체 채용 공고\n"
-                    "6. 공지 사항\n"
-                    "7. 프로필 재온보딩\n"
-                    "8. 다른 계정으로 로그인\n"
+                    "6. 온보딩 기반 추천 공고\n"
+                    "7. 공지 사항\n"
+                    "8. 프로필 재온보딩\n"
+                    "9. 다른 계정으로 로그인\n"
                     "0. 종료\n"
                     "/help  도움말\n"
                     "/quit  종료"
@@ -197,12 +199,19 @@ class RichRenderer:
         job = _mapping(recommendation.get("job"))
         matched_terms = _items(recommendation.get("matched_terms"))
         matched_text = ", ".join(str(term) for term in matched_terms) or "직접 일치 단서 없음"
+        source = recommendation.get("recommendation_source")
+        source_label = {
+            "llm": "Gemini",
+            "keyword_fallback": "키워드 대체",
+        }.get(source, _display(source))
         summary = Text()
         summary.append(
             f"희망 환경: {_display(recommendation.get('preferred_environment'))}\n"
         )
         summary.append(f"일치도 {_display(recommendation.get('match_score'))}점\n")
-        summary.append(f"일치 단서: {matched_text}")
+        summary.append(f"일치 단서: {matched_text}\n")
+        summary.append(f"판단 방식: {source_label}\n")
+        summary.append(f"추천 이유: {_display(recommendation.get('reason'))}")
         self.console.print(
             Panel(
                 summary,

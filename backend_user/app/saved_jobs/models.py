@@ -1,8 +1,10 @@
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+type RecommendationMatchTerm = Annotated[str, Field(min_length=1, max_length=80)]
 
 
 class SavedJobView(BaseModel):
@@ -27,4 +29,15 @@ class SavedJobRecommendationView(BaseModel):
     preferred_environment: str = Field(min_length=1)
     match_score: int = Field(ge=0, le=100)
     matched_terms: list[str]
+    recommendation_source: Literal["llm", "keyword_fallback"]
+    reason: str = Field(min_length=1, max_length=500)
     job: SavedJobView
+
+
+class SavedJobRecommendationDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected_job_id: UUID
+    match_score: int = Field(ge=0, le=100)
+    matched_terms: list[RecommendationMatchTerm] = Field(min_length=1, max_length=8)
+    reason: str = Field(min_length=1, max_length=500)
