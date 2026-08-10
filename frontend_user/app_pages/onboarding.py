@@ -64,6 +64,45 @@ def is_valid_notification_time(value: str) -> bool:
         return False
 
 
+def parse_notification_time_answer(value: str) -> str | None:
+    """사용자가 입력한 자연어 시간을 백엔드가 이해하기 쉬운 HH:MM으로 바꿉니다."""
+
+    text = value.strip()
+    colon_match = re.fullmatch(r"(\d{1,2}):(\d{2})(?::\d{2})?", text)
+    if colon_match:
+        hour, minute = map(int, colon_match.groups())
+    else:
+        korean_match = re.fullmatch(
+            r"(?:(오전|오후|아침|저녁|밤)\s*)?(\d{1,2})시(?:\s*(\d{1,2})분)?",
+            text,
+        )
+        if not korean_match:
+            return None
+        period, hour_text, minute_text = korean_match.groups()
+        hour = int(hour_text)
+        minute = int(minute_text or 0)
+        if period in {"오후", "저녁", "밤"} and hour < 12:
+            hour += 12
+        elif period in {"오전", "아침"} and hour == 12:
+            hour = 0
+
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
+def is_notification_time_question(latest: dict) -> bool:
+    """현재 AI 질문이 알림 시간 입력 단계인지 응답 내용으로 판단합니다."""
+
+    payload = latest.get("payload") or {}
+    missing_fields = payload.get("missing_fields") or []
+    question = str(latest.get("assistant_message") or "")
+    return (
+        "daily_notification_time" in missing_fields
+        and ("알림" in question or "시간" in question)
+    )
+
+
 def validate_draft_profile(draft: dict) -> list[str]:
     """AI가 만든 프로필에서 확정 전에 확인해야 할 의심 값을 찾습니다."""
 
@@ -308,6 +347,12 @@ def render_conversation(latest: dict, message_area) -> None:
         if choices:
             st.caption("선택 예시: " + " · ".join(choices))
 
+        if is_notification_time_question(latest):
+            st.caption("⏰ 알림 시간 예시: 오전 9시 · 오후 6시 30분 · 09:00")
+
+        # 대기 말풍선의 높이를 미리 확보해 로딩 중에도 입력창이 밀리지 않게 합니다.
+        assistant_waiting_area = st.container(height=72, border=False)
+
         # 컨테이너 안에서 사용하면 입력창이 페이지 하단이 아닌 대화 바로 아래 표시됩니다.
         text = st.chat_input(
             "답변을 입력하세요...",
@@ -318,8 +363,21 @@ def render_conversation(latest: dict, message_area) -> None:
     if text:
         try:
             st.session_state.onboarding_submitting = True
+            send_text = text.strip()
+            if is_notification_time_question(latest):
+                normalized_time = parse_notification_time_answer(send_text)
+                if normalized_time:
+                    send_text = f"알림 시간은 {normalized_time}입니다."
             # session_id를 보내면 백엔드가 Redis의 현재 질문 단계를 찾습니다.
-            response, pending = send_message(latest["session_id"], text)
+            # AI 답변을 기다리는 상태도 실제 AI 메시지와 같은 말풍선에 표시합니다.
+            with assistant_waiting_area:
+                with st.chat_message("assistant", avatar="🤖"):
+                    with st.spinner("AI 코치가 답변을 작성하고 있어요..."):
+                        response, pending = send_message(
+                            latest["session_id"],
+                            send_text,
+                        )
+            # 화면에는 사용자가 실제로 입력한 문장을 그대로 보여 줍니다.
             save_response(response, pending, user_text=text.strip())
             st.rerun()
         except BackendAPIError as error:
@@ -415,10 +473,15 @@ def render_review(latest: dict, message_area) -> None:
         else:
             try:
                 field_label = PROFILE_LABELS[selected_field]
+                normalized_edit = edited_value.strip()
+                if selected_field == "daily_notification_time":
+                    parsed_time = parse_notification_time_answer(normalized_edit)
+                    if parsed_time:
+                        normalized_edit = parsed_time
                 # 백엔드의 review 수정 계약은 자연어 입력이므로 필드 선택 결과를
                 # 한 항목만 바꾸라는 명확한 문장으로 변환해 전송합니다.
                 edit_request = (
-                    f"{field_label} 항목만 '{edited_value.strip()}'으로 수정해 줘. "
+                    f"{field_label} 항목만 '{normalized_edit}'으로 수정해 줘. "
                     "다른 프로필 항목은 변경하지 말고 그대로 유지해 줘."
                 )
                 response, pending = send_message(

@@ -1,7 +1,7 @@
 # product_router.py
 
 from fastapi import APIRouter
-from app.schemas.auth_scheme import (
+from app.schemas.auth_schema import (
     AuthLogin, AuthPublic, AuthCreate, AuthUpdate
 )
 from app.services.auth_service import (

@@ -229,6 +229,25 @@ def render_overview(plan: dict) -> None:
     )
 
 
+def update_task(plan: dict, task: dict, next_status: str) -> None:
+    """미션 상태 변경과 화면 새로고침을 한 곳에서 처리합니다."""
+
+    try:
+        st.session_state.roadmap_busy = True
+        update_task_status(plan["id"], task["id"], next_status)
+        st.session_state.roadmap_flash = (
+            "미션을 완료했어요!" if next_status == "completed"
+            else "미션을 다시 진행 중으로 바꿨어요."
+        )
+        # 서버가 계산한 전체 진행률을 다시 받기 위해 계획을 새로 조회합니다.
+        st.session_state.roadmap_loaded = False
+        st.rerun()
+    except BackendAPIError as error:
+        show_error(error)
+    finally:
+        st.session_state.roadmap_busy = False
+
+
 def tasks_for_milestone(plan: dict, milestone: dict) -> list[dict]:
     """현재 조회 구간의 날짜 중 선택한 주차에 속하는 미션을 모읍니다."""
 
@@ -338,23 +357,7 @@ def render_active_plan(plan: dict) -> None:
                             use_container_width=True,
                             disabled=st.session_state.roadmap_busy,
                         ):
-                            try:
-                                st.session_state.roadmap_busy = True
-                                result = update_task_status(
-                                    plan["id"], task["id"], next_status
-                                )
-                                st.session_state.roadmap_flash = (
-                                    "미션 상태를 변경했습니다."
-                                )
-                                st.session_state.roadmap_plan["percent"] = (
-                                    result["percent"]
-                                )
-                                st.session_state.roadmap_loaded = False
-                                st.rerun()
-                            except BackendAPIError as error:
-                                show_error(error)
-                            finally:
-                                st.session_state.roadmap_busy = False
+                            update_task(plan, task, next_status)
 
             coach_message = (
                 "이번 주 미션을 모두 클리어했어요. 다음 주 퀘스트도 이어서 도전해 볼까요? 🚀"
