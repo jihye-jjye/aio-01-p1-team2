@@ -9,7 +9,6 @@ import re
 
 MIN_PASSWORD_LENGTH = 12
 
-
 def main() -> None:
     password = getpass("고정 관리자 비밀번호: ")
     confirmation = getpass("비밀번호 확인: ")

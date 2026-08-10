@@ -82,3 +82,49 @@ class AdminUserQueryParams(BaseModel):
     is_active: bool | None = None
     page: int = Field(default=1, ge=1)
     size: int = Field(default=20, ge=1, le=100)
+
+class AdminPlanSummary(BaseModel):
+    id: UUID
+    title: str
+    summary: str | None = None
+    starts_on: date
+    ends_on: date
+    total_task_count: int
+    final_progress: int | None = None
+    status: str
+    activated_at: datetime | None = None
+    ended_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminQuestItem(BaseModel):
+    id: UUID
+    plan_id: UUID | None = None
+    kind: str
+    title: str
+    description: str | None = None
+    scheduled_at: datetime | None = None
+    status: str
+    plan_day: int | None = None
+    slot: int | None = None
+    counts_toward_progress: bool
+    completed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminQuestProgress(BaseModel):
+    total: int = Field(ge=0)
+    completed: int = Field(ge=0)
+    in_progress: int = Field(ge=0)
+    pending: int = Field(ge=0)
+    progress_percent: int = Field(ge=0, le=100)
+
+
+class AdminUserOverview(BaseModel):
+    account: AdminUserDetail
+    plans: list[AdminPlanSummary]
+    quests: list[AdminQuestItem]
+    quest_progress: AdminQuestProgress
+    last_login_at: datetime | None
