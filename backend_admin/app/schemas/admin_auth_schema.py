@@ -13,8 +13,8 @@ class AdminLoginRequest(BaseModel):
         pattern=r"^[a-z0-9._-]+$",
     )
     password: str = Field(
-        min_length=8,
-        max_length=8,
+        min_length=12,
+        max_length=128,
     )
 
 

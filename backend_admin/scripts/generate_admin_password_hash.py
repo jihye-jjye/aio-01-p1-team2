@@ -16,9 +16,9 @@ def main() -> None:
 
     PASSWORD_LENGTH = 8
 
-    if len(password) != PASSWORD_LENGTH:
+    if len(password) < MIN_PASSWORD_LENGTH:
         raise SystemExit(
-            "비밀번호는 정확히 8자여야 합니다."
+            f"비밀번호는 {MIN_PASSWORD_LENGTH}자 이상이어야 합니다."
         )
     if password != confirmation:
         raise SystemExit("비밀번호가 일치하지 않습니다.")
