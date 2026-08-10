@@ -4,7 +4,7 @@ Gemini `gemini-3.6-flash` 자유대화 온보딩을 FastAPI, Redis, Supabase Pos
 
 자체 계정 API는 `login_id/login_pw` 기반 회원가입과 로그인을 지원합니다. 회원가입 성공 시 access/refresh token을 즉시 발급합니다.
 
-활성 계획은 날짜별 task를 모두 완료하는 순간 일일 목표를 달성하고 `+10 EXP`를 누적합니다. 완료 task를 되돌려 날짜가 다시 미달성이 되면 `-10 EXP`, 재완료하면 다시 `+10 EXP`가 반영되며 과거·미래 날짜에도 같은 규칙이 적용됩니다.
+활성 계획은 날짜별 task를 모두 완료하는 순간 일일 목표를 달성하고 `+20 EXP`를 누적합니다. 완료 task를 되돌려 날짜가 다시 미달성이 되면 `-20 EXP`, 재완료하면 다시 `+20 EXP`가 반영되며 과거·미래 날짜에도 같은 규칙이 적용됩니다.
 
 ```bash
 curl -X POST http://192.100.200.209:8010/api/v1/auth/signup \

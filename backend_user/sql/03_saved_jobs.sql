@@ -2,8 +2,6 @@ begin;
 
 create table if not exists app.saved_jobs (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null
-    references app.user_accounts (id) on delete cascade,
   source_type text not null,
   source_url text,
   source_key text not null,
@@ -15,10 +13,8 @@ create table if not exists app.saved_jobs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
-  constraint saved_jobs_user_id_id_unique
-    unique (user_id, id),
-  constraint saved_jobs_user_source_key_unique
-    unique (user_id, source_key),
+  constraint saved_jobs_source_key_unique
+    unique (source_key),
   constraint saved_jobs_source_type_check
     check (source_type in ('url', 'pasted_text')),
   constraint saved_jobs_source_url_check
@@ -39,7 +35,7 @@ create table if not exists app.saved_jobs (
 );
 
 create index if not exists saved_jobs_deadline_idx
-  on app.saved_jobs (user_id, deadline)
+  on app.saved_jobs (deadline, id)
   where deadline is not null;
 
 do $block$

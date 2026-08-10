@@ -31,6 +31,7 @@ from app.plans.records import (
     StoredPlan,
     StoredPlanProposal,
     StoredTaskUpdate,
+    TodayQuestSnapshot,
 )
 from app.profiles.models import ProfileOnboardingData
 
@@ -712,6 +713,88 @@ class PsycopgPlanProposalRepository:
             )
         return self._stored_plan(row, items, achievements)
 
+    async def get_today_quests(self, *, user_id: UUID) -> TodayQuestSnapshot:
+        async with self._pool.connection() as connection, connection.transaction():
+            today = self._today_provider()
+            plan_row = await self._fetch_owned_plan_row(
+                connection,
+                user_id=user_id,
+                plan_id=None,
+                active_only=True,
+                lock=True,
+            )
+            if plan_row is None:
+                user_exp = await self._fetch_read_user_exp(
+                    connection, user_id=user_id
+                )
+                return TodayQuestSnapshot(
+                    date=today,
+                    plan_id=None,
+                    plan_title=None,
+                    tasks=[],
+                    achievement=None,
+                    user_exp=user_exp,
+                )
+
+            plan_id = UUID(str(plan_row["id"]))
+            user_exp = await self._fetch_read_user_exp(connection, user_id=user_id)
+            starts_on = plan_row.get("starts_on")
+            ends_on = plan_row.get("ends_on")
+            if not isinstance(starts_on, date) or not isinstance(ends_on, date):
+                raise PlanDataIntegrityError()
+            if not starts_on <= today <= ends_on:
+                return TodayQuestSnapshot(
+                    date=today,
+                    plan_id=plan_id,
+                    plan_title=str(plan_row["title"]),
+                    tasks=[],
+                    achievement=None,
+                    user_exp=user_exp,
+                )
+
+            progress_rows = await self._fetch_progress_rows(
+                connection, user_id=user_id, plan_id=plan_id, lock=False
+            )
+            proposal = self._proposal_from_plan_row(plan_row).content
+            progress = [self._schedule_item(row) for row in progress_rows]
+            self._validate_progress_rows(proposal, plan_row, progress)
+            plan_day = (today - starts_on).days + 1
+            tasks = [item for item in progress if item.plan_day == plan_day]
+            if not tasks:
+                raise PlanDataIntegrityError()
+
+            achievement_cursor = await connection.execute(
+                """
+                select
+                  user_id, plan_id, plan_day, goal_date, achieved, achieved_at,
+                  exp_awarded
+                from app.daily_goal_achievements
+                where user_id = %(user_id)s and plan_id = %(plan_id)s
+                  and plan_day = %(plan_day)s
+                """,
+                {"user_id": user_id, "plan_id": plan_id, "plan_day": plan_day},
+            )
+            achievement_row = await achievement_cursor.fetchone()
+            if achievement_row is None:
+                raise PlanDataIntegrityError()
+            achievement = self._daily_goal_achievement(achievement_row)
+            self._validate_daily_goal(
+                achievement,
+                user_id=user_id,
+                plan_id=plan_id,
+                plan_day=plan_day,
+                goal_date=today,
+                tasks=tasks,
+            )
+            return TodayQuestSnapshot(
+                date=today,
+                plan_id=plan_id,
+                plan_title=str(plan_row["title"]),
+                tasks=tasks,
+                achievement=achievement,
+                user_exp=user_exp,
+            )
+
     async def set_task_status(
         self,
         *,
@@ -720,6 +803,38 @@ class PsycopgPlanProposalRepository:
         task_id: UUID,
         status: Literal["pending", "completed"],
     ) -> StoredTaskUpdate | None:
+        return await self._set_task_status(
+            user_id=user_id,
+            plan_id=plan_id,
+            task_id=task_id,
+            status=status,
+            today_only=False,
+        )
+
+    async def set_today_task_status(
+        self,
+        *,
+        user_id: UUID,
+        task_id: UUID,
+        status: Literal["pending", "completed"],
+    ) -> StoredTaskUpdate | None:
+        return await self._set_task_status(
+            user_id=user_id,
+            plan_id=None,
+            task_id=task_id,
+            status=status,
+            today_only=True,
+        )
+
+    async def _set_task_status(
+        self,
+        *,
+        user_id: UUID,
+        plan_id: UUID | None,
+        task_id: UUID,
+        status: Literal["pending", "completed"],
+        today_only: bool,
+    ) -> StoredTaskUpdate | None:
         parameters: dict[str, Any] = {
             "user_id": user_id,
             "plan_id": plan_id,
@@ -727,15 +842,18 @@ class PsycopgPlanProposalRepository:
             "status": status,
         }
         async with self._pool.connection() as connection, connection.transaction():
+            required_goal_date = self._today_provider() if today_only else None
             plan_row = await self._fetch_owned_plan_row(
                 connection,
                 user_id=user_id,
                 plan_id=plan_id,
-                active_only=False,
+                active_only=today_only,
                 lock=True,
             )
             if plan_row is None:
                 return None
+            plan_id = UUID(str(plan_row["id"]))
+            parameters["plan_id"] = plan_id
             task_cursor = await connection.execute(
                 """
                 select
@@ -754,6 +872,11 @@ class PsycopgPlanProposalRepository:
             if task_row is None:
                 return None
             task = self._schedule_item(task_row)
+            if required_goal_date is not None:
+                if task.scheduled_at is None or task.scheduled_at.tzinfo is None:
+                    raise PlanDataIntegrityError()
+                if task.scheduled_at.astimezone(ZoneInfo("Asia/Seoul")).date() != required_goal_date:
+                    return None
             if task.status not in ("pending", "completed") or (
                 (task.status == "completed") != (task.completed_at is not None)
             ):
@@ -791,6 +914,8 @@ class PsycopgPlanProposalRepository:
                 raise PlanDataIntegrityError()
             task = matching_task
             task_date = proposal.days[task.plan_day - 1].date
+            if required_goal_date is not None and task_date != required_goal_date:
+                raise PlanDataIntegrityError()
             achievement_cursor = await connection.execute(
                 """
                 select
@@ -831,8 +956,8 @@ class PsycopgPlanProposalRepository:
             if day_total == 0:
                 raise PlanDataIntegrityError()
             achieved = day_completed == day_total
-            exp_delta = (int(achieved) - int(achievement.achieved)) * 10
-            if exp_delta not in (-10, 0, 10):
+            exp_delta = (int(achieved) - int(achievement.achieved)) * 20
+            if exp_delta not in (-20, 0, 20):
                 raise PlanDataIntegrityError()
 
             account_cursor = await connection.execute(
@@ -867,7 +992,7 @@ class PsycopgPlanProposalRepository:
                     "old_exp_awarded": achievement.exp_awarded,
                     "achieved": achieved,
                     "achieved_at": achieved_at,
-                    "exp_awarded": 10 if achieved else 0,
+                    "exp_awarded": 20 if achieved else 0,
                     "exp_delta": exp_delta,
                 }
                 achievement_update_cursor = await connection.execute(
@@ -1175,6 +1300,31 @@ class PsycopgPlanProposalRepository:
         return value
 
     @staticmethod
+    def _validated_read_user_exp(row: Mapping[str, Any] | None, *, user_id: UUID) -> int:
+        if row is None or row.get("id") != user_id or row.get("role") not in ("user", "admin"):
+            raise PlanDataIntegrityError()
+        value = row.get("user_exp")
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise PlanDataIntegrityError()
+        if row.get("role") == "admin" and value != 0:
+            raise PlanDataIntegrityError()
+        return value
+
+    @staticmethod
+    async def _fetch_read_user_exp(connection: Any, *, user_id: UUID) -> int:
+        account_cursor = await connection.execute(
+            """
+            select id, role, user_exp
+            from app.user_accounts
+            where id = %(user_id)s
+            """,
+            {"user_id": user_id},
+        )
+        return PsycopgPlanProposalRepository._validated_read_user_exp(
+            await account_cursor.fetchone(), user_id=user_id
+        )
+
+    @staticmethod
     def _validate_daily_goal(
         achievement: DailyGoalAchievement,
         *,
@@ -1201,7 +1351,7 @@ class PsycopgPlanProposalRepository:
         if (
             achievement.achieved != expected_achieved
             or achievement.achieved_at != expected_achieved_at
-            or achievement.exp_awarded != (10 if expected_achieved else 0)
+            or achievement.exp_awarded != (20 if expected_achieved else 0)
         ):
             raise PlanDataIntegrityError()
 

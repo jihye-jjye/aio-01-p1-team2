@@ -104,6 +104,12 @@ class PlanTaskNotFoundError(PlanDomainError):
     default_message = "계획 과제를 찾을 수 없습니다."
 
 
+class TodayQuestNotFoundError(PlanDomainError):
+    status_code = 404
+    code = "TODAY_QUEST_NOT_FOUND"
+    default_message = "오늘 퀘스트를 찾을 수 없습니다."
+
+
 class PlanNotActiveError(PlanDomainError):
     status_code = 409
     code = "PLAN_NOT_ACTIVE"

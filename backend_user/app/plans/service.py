@@ -18,6 +18,7 @@ from app.plans.errors import (
     PlanProposalNotFoundError,
     PlanProposalNotPendingError,
     PlanTaskNotFoundError,
+    TodayQuestNotFoundError,
 )
 from app.plans.generation import ProfilePlanGenerator, validate_horizon
 from app.plans.models import ProfilePlanOutlineV1, ProfilePlanProposalV1, ProfilePlanTasksV1
@@ -26,6 +27,7 @@ from app.plans.records import (
     StoredPlan,
     StoredPlanProposal,
     StoredTaskUpdate,
+    TodayQuestSnapshot,
 )
 
 
@@ -306,6 +308,16 @@ class PlanManagementRepositoryPort(Protocol):
 
     async def complete_plan(self, *, user_id: UUID, plan_id: UUID) -> StoredPlan | None: ...
 
+    async def get_today_quests(self, *, user_id: UUID) -> TodayQuestSnapshot: ...
+
+    async def set_today_task_status(
+        self,
+        *,
+        user_id: UUID,
+        task_id: UUID,
+        status: Literal["pending", "completed"],
+    ) -> StoredTaskUpdate | None: ...
+
 
 class PlanManagementService:
     def __init__(
@@ -365,4 +377,23 @@ class PlanManagementService:
         result = await self._repository.complete_plan(user_id=user_id, plan_id=plan_id)
         if result is None:
             raise PlanNotFoundError()
+        return result
+
+    async def get_today_quests(self, *, user_id: UUID) -> TodayQuestSnapshot:
+        return await self._repository.get_today_quests(user_id=user_id)
+
+    async def set_today_task_status(
+        self,
+        *,
+        user_id: UUID,
+        task_id: UUID,
+        status: Literal["pending", "completed"],
+    ) -> StoredTaskUpdate:
+        result = await self._repository.set_today_task_status(
+            user_id=user_id,
+            task_id=task_id,
+            status=status,
+        )
+        if result is None:
+            raise TodayQuestNotFoundError()
         return result

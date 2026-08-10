@@ -21,9 +21,9 @@ create table if not exists app.ai_results (
     unique (user_id, id),
   constraint ai_results_user_request_unique
     unique (user_id, request_id),
-  constraint ai_results_saved_job_owner_fkey
-    foreign key (user_id, saved_job_id)
-    references app.saved_jobs (user_id, id)
+  constraint ai_results_saved_job_fkey
+    foreign key (saved_job_id)
+    references app.saved_jobs (id)
     on delete restrict,
   constraint ai_results_applied_plan_owner_fkey
     foreign key (user_id, applied_plan_id)
@@ -168,7 +168,7 @@ create table if not exists app.ai_results (
 );
 
 create index if not exists ai_results_saved_job_idx
-  on app.ai_results (user_id, saved_job_id)
+  on app.ai_results (saved_job_id, user_id)
   where saved_job_id is not null;
 
 create index if not exists ai_results_applied_plan_idx

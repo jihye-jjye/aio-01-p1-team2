@@ -77,12 +77,12 @@ class DailyGoalAchievement(StrictPlanModel):
     goal_date: date
     achieved: bool
     achieved_at: datetime | None
-    exp_awarded: Literal[0, 10]
+    exp_awarded: Literal[0, 20]
 
     @model_validator(mode="after")
     def validate_state(self) -> DailyGoalAchievement:
         if self.achieved:
-            if self.achieved_at is None or self.exp_awarded != 10:
+            if self.achieved_at is None or self.exp_awarded != 20:
                 raise ValueError("achieved daily goal metadata is inconsistent")
         elif self.achieved_at is not None or self.exp_awarded != 0:
             raise ValueError("pending daily goal metadata is inconsistent")
@@ -119,6 +119,15 @@ class StoredTaskUpdate(StrictPlanModel):
     day_total_task_count: int
     achieved: bool
     achieved_at: datetime | None
-    earned_exp: Literal[0, 10]
-    exp_delta: Literal[-10, 0, 10]
+    earned_exp: Literal[0, 20]
+    exp_delta: Literal[-20, 0, 20]
+    user_exp: int = Field(ge=0)
+
+
+class TodayQuestSnapshot(StrictPlanModel):
+    date: date
+    plan_id: UUID | None
+    plan_title: str | None
+    tasks: list[PlanScheduleItem]
+    achievement: DailyGoalAchievement | None
     user_exp: int = Field(ge=0)

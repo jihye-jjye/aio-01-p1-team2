@@ -112,8 +112,9 @@ class RichRenderer:
                     "1. 프로필 보기\n"
                     "2. 로드맵 제안 생성·검토\n"
                     "3. 활성 로드맵\n"
-                    "4. 프로필 재온보딩\n"
-                    "5. 다른 계정으로 로그인\n"
+                    "4. 전체 채용 공고\n"
+                    "5. 프로필 재온보딩\n"
+                    "6. 다른 계정으로 로그인\n"
                     "0. 종료"
                 ),
                 title=Text("메인 메뉴"),
@@ -129,8 +130,9 @@ class RichRenderer:
                     "1. 프로필 보기\n"
                     "2. 로드맵 제안 생성·검토\n"
                     "3. 활성 로드맵\n"
-                    "4. 프로필 재온보딩\n"
-                    "5. 다른 계정으로 로그인\n"
+                    "4. 전체 채용 공고\n"
+                    "5. 프로필 재온보딩\n"
+                    "6. 다른 계정으로 로그인\n"
                     "0. 종료\n"
                     "/help  도움말\n"
                     "/quit  종료"
@@ -139,6 +141,43 @@ class RichRenderer:
                 border_style="blue",
             )
         )
+
+    def saved_jobs(self, saved_jobs: list[dict[str, Any]]) -> None:
+        if not saved_jobs:
+            self.console.print(
+                Panel(
+                    Text("등록된 채용 공고가 없습니다."),
+                    title=Text("전체 채용 공고"),
+                    border_style="yellow",
+                )
+            )
+            return
+
+        table = Table(
+            title=Text(f"전체 채용 공고 ({len(saved_jobs)}건)"),
+            show_lines=True,
+        )
+        table.add_column(Text("번호"), style="bold", justify="right")
+        table.add_column(Text("회사"), overflow="fold")
+        table.add_column(Text("직무"), overflow="fold")
+        table.add_column(Text("마감일"))
+        table.add_column(Text("출처"))
+        table.add_column(Text("지원 URL"), overflow="fold")
+        for number, saved_job in enumerate(saved_jobs, start=1):
+            source_type = saved_job.get("source_type")
+            source_label = {
+                "url": "URL",
+                "pasted_text": "직접 입력",
+            }.get(source_type, _display(source_type))
+            table.add_row(
+                Text(str(number)),
+                Text(_display(saved_job.get("company_name"))),
+                Text(_display(saved_job.get("job_title"))),
+                Text(_display(saved_job.get("deadline"))),
+                Text(source_label),
+                Text(_display(saved_job.get("source_url"))),
+            )
+        self.console.print(table)
 
     def proposal(self, proposal: dict) -> None:
         self.console.print(

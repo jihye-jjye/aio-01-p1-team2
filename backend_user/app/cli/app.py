@@ -27,6 +27,7 @@ class ApiPort(Protocol):
     async def signup(self, login_id: str, login_pw: str, user_name: str) -> str: ...
     async def login(self, login_id: str, login_pw: str) -> None: ...
     async def profile(self) -> dict[str, Any]: ...
+    async def saved_jobs(self) -> list[dict[str, Any]]: ...
     async def start(self) -> dict[str, Any]: ...
     async def message(self, session_id: str, text: str) -> dict[str, Any]: ...
     async def confirm(self, session_id: str, revision: int) -> dict[str, Any]: ...
@@ -73,6 +74,7 @@ class RendererPort(Protocol):
     def success(self, profile: dict[str, Any]) -> None: ...
     def main_menu(self) -> None: ...
     def main_menu_help(self) -> None: ...
+    def saved_jobs(self, saved_jobs: list[dict[str, Any]]) -> None: ...
     def proposal(self, proposal: dict[str, Any]) -> None: ...
     def proposal_help(self) -> None: ...
     def plan(self, plan: dict[str, Any], *, task_numbers: dict[str, int]) -> None: ...
@@ -304,6 +306,11 @@ class CliApp:
                     return result
                 continue
             if choice == "4":
+                result = await self._saved_jobs_entry()
+                if isinstance(result, ReloginRequired):
+                    return result
+                continue
+            if choice == "5":
                 result = await self._reonboard()
                 if isinstance(result, ProfileReady):
                     profile = result.profile
@@ -311,10 +318,22 @@ class CliApp:
                 if isinstance(result, (int, ReloginRequired)):
                     return result
                 continue
-            if choice == "5":
+            if choice == "6":
                 self._proposal_request_id = None
                 return SwitchAccount()
             self.renderer.main_menu_help()
+
+    async def _saved_jobs_entry(self) -> ReloginRequired | None:
+        try:
+            with self.renderer.status("채용 공고 조회 중..."):
+                saved_jobs = await self.api.saved_jobs()
+        except ApiError as exc:
+            self.renderer.error(_friendly_error(exc))
+            if _requires_login(exc):
+                return ReloginRequired()
+            return None
+        self.renderer.saved_jobs(saved_jobs)
+        return None
 
     async def _proposal_entry(self) -> int | ReloginRequired | None:
         try:
@@ -560,10 +579,10 @@ class CliApp:
                 if _task_update_matches_plan(patch_result, plan):
                     exp_delta = patch_result.get("exp_delta")
                     user_exp = patch_result.get("user_exp")
-                    if exp_delta == 10:
-                        self.renderer.notice(f"일일 목표 달성 · +10 EXP · 누적 {user_exp} EXP")
-                    elif exp_delta == -10:
-                        self.renderer.notice(f"일일 목표 달성 취소 · -10 EXP · 누적 {user_exp} EXP")
+                    if exp_delta == 20:
+                        self.renderer.notice(f"일일 목표 달성 · +20 EXP · 누적 {user_exp} EXP")
+                    elif exp_delta == -20:
+                        self.renderer.notice(f"일일 목표 달성 취소 · -20 EXP · 누적 {user_exp} EXP")
                 else:
                     self.renderer.error(
                         "과제 변경 결과를 검증하지 못했습니다. 표시된 최신 계획을 확인해주세요."
@@ -992,7 +1011,7 @@ def _task_update_matches_plan(update: dict[str, Any], plan: dict[str, Any]) -> b
         or type(plan_day) is not int
         or plan_day <= 0
         or type(exp_delta) is not int
-        or exp_delta not in (-10, 0, 10)
+        or exp_delta not in (-20, 0, 20)
         or type(user_exp) is not int
         or user_exp < 0
         or plan.get("user_exp") != user_exp
@@ -1118,6 +1137,7 @@ def _friendly_error(
         "PLAN_DATA_INTEGRITY_ERROR": "로드맵 데이터를 검증하지 못했습니다.",
         "CLIENT_TIMEOUT": "서버 응답 시간이 초과되었습니다. 다시 시도해주세요.",
         "CLIENT_NETWORK_ERROR": "서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.",
+        "INVALID_RESPONSE": "서버 응답 형식을 확인할 수 없습니다. 다시 시도해주세요.",
     }
     return messages.get(exc.code, "요청을 처리하지 못했습니다. 다시 시도해주세요.")
 

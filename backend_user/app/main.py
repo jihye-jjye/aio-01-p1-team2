@@ -54,6 +54,18 @@ OPENAPI_TAGS = [
         "name": "plans",
         "description": "활성·완료 plan window 조회, task 진행 상태 변경과 plan 완료",
     },
+    {
+        "name": "notices",
+        "description": "현재 게시 중인 고정·일반 공지 조회",
+    },
+    {
+        "name": "quests",
+        "description": "KST 오늘 퀘스트 조회와 완료 상태 변경",
+    },
+    {
+        "name": "saved-jobs",
+        "description": "모든 인증 사용자가 공유하는 저장 공고 조회",
+    },
 ]
 
 

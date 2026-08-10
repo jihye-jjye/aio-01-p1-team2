@@ -30,6 +30,8 @@ from app.gemini.plan_adapter import (
 )
 from app.gemini.rate_limit import RedisGeminiRateLimiter
 from app.gemini.structured import GeminiStructuredClient
+from app.notices.repository import PsycopgNoticeRepository
+from app.notices.service import NoticeService
 from app.onboarding.service import OnboardingService
 from app.onboarding.stores import RedisOnboardingSessionLock, RedisOnboardingSessionStore
 from app.plans.errors import PlanDomainError
@@ -37,6 +39,8 @@ from app.plans.generation import ProfilePlanGenerator
 from app.plans.service import PlanManagementService, PlanProposalService
 from app.plans.stores import RedisPlanGenerationLock, RedisPlanGenerationStore
 from app.profiles.models import ProfileRecord
+from app.saved_jobs.repository import PsycopgSavedJobRepository
+from app.saved_jobs.service import SavedJobService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -178,6 +182,18 @@ def get_plan_management_service(
         repository=PsycopgPlanProposalRepository(pool, today_provider=today_provider),
         today_provider=today_provider,
     )
+
+
+def get_notice_service(
+    pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
+) -> NoticeService:
+    return NoticeService(PsycopgNoticeRepository(pool))
+
+
+def get_saved_job_service(
+    pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
+) -> SavedJobService:
+    return SavedJobService(PsycopgSavedJobRepository(pool))
 
 
 def get_current_user(

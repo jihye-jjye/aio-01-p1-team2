@@ -29,9 +29,9 @@ create table if not exists app.plans (
     unique (user_id, id),
   constraint plans_user_source_request_unique
     unique (user_id, source_request_id),
-  constraint plans_source_saved_job_owner_fkey
-    foreign key (user_id, source_saved_job_id)
-    references app.saved_jobs (user_id, id)
+  constraint plans_source_saved_job_fkey
+    foreign key (source_saved_job_id)
+    references app.saved_jobs (id)
     on delete restrict,
   constraint plans_previous_plan_owner_fkey
     foreign key (user_id, previous_plan_id)
@@ -139,7 +139,7 @@ create unique index if not exists plans_proposal_result_uidx
   where proposal_result_id is not null;
 
 create index if not exists plans_source_saved_job_idx
-  on app.plans (user_id, source_saved_job_id)
+  on app.plans (source_saved_job_id, user_id)
   where source_saved_job_id is not null;
 
 create index if not exists plans_previous_plan_idx
