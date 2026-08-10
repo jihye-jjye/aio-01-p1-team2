@@ -1,6 +1,6 @@
 import streamlit as st
 
-from frontend_user.core.auth_sample import init_state, is_logged_in, login, logout
+from core.auth_sample import init_state, is_logged_in, login, logout
 
 
 st.set_page_config(

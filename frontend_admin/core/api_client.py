@@ -4,7 +4,9 @@ import os
 import httpx
 from typing import Any
 
-BACKEND_URL = "http://127.0.0.1:8000"
+# BACKEND_URL = "http://127.0.0.1:8000"
+# BACKEND_URL = "http://192.100.200.209:8010/api/v1" # 사용자 서버
+BACKEND_URL = "http://192.100.200.72:8000/api/v1"
 REQUEST_TIMEOUT = 15.0
 
 class BackendAPIError(Exception):
@@ -19,6 +21,7 @@ def request(method: str,
             params: dict[str, Any] | None = None
             ):
     try:
+        
         response = httpx.request(
             method,
             f"{BACKEND_URL}{path}",

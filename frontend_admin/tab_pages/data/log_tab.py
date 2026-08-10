@@ -1,6 +1,6 @@
 import streamlit as st
 
-from frontend_user.core.auth_sample import is_logged_in
+from core.auth_sample import is_logged_in
 
 
 def show_log() -> None:
