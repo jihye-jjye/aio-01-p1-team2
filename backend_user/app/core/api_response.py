@@ -1,6 +1,7 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
 
 class ApiResponse(BaseModel):
     """수업용 표준 응답 모델입니다."""

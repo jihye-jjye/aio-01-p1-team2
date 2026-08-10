@@ -9,11 +9,11 @@ import hashlib
 import hmac
 import secrets
 
-
 # PBKDF2 계산을 반복하는 횟수입니다.
 # 반복 횟수가 많을수록 비밀번호 해시 계산에 시간이 더 걸리므로,
 # 공격자가 수많은 비밀번호를 빠르게 대입하기 어려워집니다.
 ITERATIONS = 200_000
+
 
 # pwd01 => fdsafdsafdsafdsafdsafdsafdsaffdas
 def hash_password(password: str) -> str:
