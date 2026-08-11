@@ -14,10 +14,9 @@ from core.session import clear_auth_state, get_access_token
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 BACKEND_URL = os.getenv(
     "BACKEND_URL",
-    "http://192.100.200.209:8010/api/v1",
+    "https://aio-01-p1-team2-1.onrender.com/api/v1",
 ).rstrip("/")
 REQUEST_TIMEOUT = 60.0
-
 
 class BackendAPIError(Exception):
     """백엔드 오류 envelope와 네트워크 오류를 동일한 형태로 전달합니다."""
