@@ -60,9 +60,10 @@ recruitment_notice_detail_page = st.Page(
     icon="",
 )
 
-
 navigation = st.navigation(
-    [start_page, user_management_page, user_management_detail_page, notice_page, loadmap_page, notice_detail_page],
+    [start_page, user_management_page, user_management_detail_page, notice_page, loadmap_page, notice_detail_page, 
+     recruitment_notice_page,recruitment_notice_detail_page
+     ],
     position="hidden",
 )
 
@@ -73,6 +74,7 @@ with st.sidebar:
         st.page_link(user_management_page)
         st.page_link(loadmap_page)
         st.page_link(notice_page)
+        st.page_link(recruitment_notice_page)
         if st.button("로그아웃") :
             logout()
             st.switch_page(start_page)

@@ -14,9 +14,7 @@ def login(login_id:str, login_pwd:str) -> dict:
     try:
         payload = {"login_id" : login_id, "password" : login_pwd}
         result = login_process(payload)
-        print(f"login result : {result}")
         if result["access_token"] is not None:
-            print("accesstoken cofirm")
             st.session_state.user_id  = login_id
             st.session_state.access_token = result["access_token"]            
         return result

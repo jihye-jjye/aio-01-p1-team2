@@ -12,7 +12,8 @@ try:
     response = user_get_overview_process(st.session_state.selected_item_login_id)
     account_info = response["account"]
     profile_info = account_info["profile"]
-    quest_info = response["quests"]
+    # quest_info = response["quests"]
+    quest_info = response["quest_progress"]
 
     if response is not None:
         with st.container(border=True) :

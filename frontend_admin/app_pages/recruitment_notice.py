@@ -8,7 +8,7 @@ try:
     if response is not None:
         with st.container(border=True):
            
-            column_widths = [2.0, 1.0, 1.2, 1.2, 1.8, 1.5, 0.5]
+            column_widths = [2.0, 1.8, 1.8, 1.0, 1.0, 1.0, 0.8]
 
             # 헤더
             header_cols = st.columns(column_widths)
