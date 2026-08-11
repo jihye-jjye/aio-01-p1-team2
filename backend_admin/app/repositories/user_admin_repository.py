@@ -16,13 +16,16 @@ PLAN_TABLE = "plans"
 SCHEDULE_ITEM_TABLE = "schedule_items"
 
 PLAN_COLUMNS = (
-    "id,title,summary,starts_on,ends_on,total_task_count,"
-    "final_progress,status,activated_at,ended_at,created_at,updated_at"
+    "id,source_saved_job_id,proposal_result_id,previous_plan_id,"
+    "title,summary,goal_snapshot,starts_on,ends_on,total_task_count,"
+    "final_progress,status,activated_at,ended_at,archived_at,"
+    "created_at,updated_at"
 )
 
 QUEST_COLUMNS = (
-    "id,plan_id,kind,title,description,scheduled_at,status,"
-    "plan_day,slot,counts_toward_progress,completed_at,"
+    "id,plan_id,saved_job_id,kind,title,description,"
+    "scheduled_at,remind_at,status,plan_day,slot,detail_status,"
+    "counts_toward_progress,metadata,completed_at,"
     "created_at,updated_at"
 )
 
@@ -109,12 +112,27 @@ class UserAdminRepository:
         return normalized
 
     def get_user_by_id(self, user_id: UUID) -> dict[str, Any] | None:
+        return self._get_user_detail("id", str(user_id))
+
+    def get_user_by_login_id(
+        self,
+        login_id: str,
+    ) -> dict[str, Any] | None:
+        """정규화된 로그인 아이디로 계정과 프로필을 조회한다."""
+
+        return self._get_user_detail("login_id", login_id.strip().lower())
+
+    def _get_user_detail(
+        self,
+        lookup_column: str,
+        lookup_value: str,
+    ) -> dict[str, Any] | None:
         try:
             account_response = (
                 self.client.schema(APP_SCHEMA)
                 .table(USER_TABLE)
                 .select(USER_ACCOUNT_COLUMNS)
-                .eq("id", str(user_id))
+                .eq(lookup_column, lookup_value)
                 .limit(1)
                 .execute()
             )
@@ -125,7 +143,7 @@ class UserAdminRepository:
                 self.client.schema(APP_SCHEMA)
                 .table(PROFILE_TABLE)
                 .select(PROFILE_COLUMNS)
-                .eq("user_id", str(user_id))
+                .eq("user_id", str(account_response.data[0]["id"]))
                 .limit(1)
                 .execute()
             )
@@ -166,14 +184,15 @@ class UserAdminRepository:
         return response.data[0]
 
     def delete_user(self, user_id: UUID) -> dict[str, Any] | None:
-        """사용자 계정 행을 실제로 삭제하고 삭제된 row를 반환한다."""
+        """DB 함수로 사용자와 모든 연관 데이터를 원자적으로 삭제한다."""
 
         try:
             response = (
                 self.client.schema(APP_SCHEMA)
-                .table(USER_TABLE)
-                .delete()
-                .eq("id", str(user_id))
+                .rpc(
+                    "delete_user_completely",
+                    {"target_user_id": str(user_id)},
+                )
                 .execute()
             )
         except (APIError, httpx.HTTPError) as exc:
@@ -181,9 +200,12 @@ class UserAdminRepository:
                 "사용자를 삭제할 수 없습니다."
             ) from exc
 
-        if not response.data:
+        if response.data is None:
             return None
-        return response.data[0]
+
+        if isinstance(response.data, list):
+            return response.data[0] if response.data else None
+        return dict(response.data)
 
     def get_user_plans(self, user_id: UUID) -> list[dict[str, Any]]:
         try:

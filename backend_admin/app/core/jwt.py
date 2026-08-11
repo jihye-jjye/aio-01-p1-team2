@@ -1,4 +1,4 @@
-"""일반 사용자와 고정 관리자 JWT의 발급 및 검증."""
+"""일반 사용자 JWT의 발급 및 검증."""
 
 from __future__ import annotations
 
@@ -86,10 +86,10 @@ def create_access_token(subject: UUID) -> tuple[str, int]:
     return _create_access_token(subject=str(subject), scope="user")
 
 
-def create_admin_access_token() -> tuple[str, int]:
-    """고정 관리자용 JWT를 발급한다."""
+def create_admin_access_token(subject: UUID) -> tuple[str, int]:
+    """관리자 UUID를 갖는 관리자 전용 JWT를 발급한다."""
 
-    return _create_access_token(subject="fixed-admin", scope="admin")
+    return _create_access_token(subject=str(subject), scope="admin")
 
 
 def _decode_token(token: str) -> dict:
@@ -125,3 +125,15 @@ def decode_access_token(token: str) -> UUID:
         return UUID(str(payload["sub"]))
     except (KeyError, TypeError, ValueError) as exc:
         raise TokenValidationError("사용자 식별자가 올바르지 않습니다.") from exc
+
+
+def decode_admin_access_token(token: str) -> UUID:
+    """관리자 JWT를 검증하고 관리자 UUID를 반환한다."""
+
+    payload = _decode_token(token)
+    if payload.get("scope") != "admin":
+        raise TokenValidationError("관리자 토큰이 아닙니다.")
+    try:
+        return UUID(str(payload["sub"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise TokenValidationError("관리자 식별자가 올바르지 않습니다.") from exc

@@ -3,8 +3,9 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.dependencies import get_current_admin
 from app.schemas.log_schema import (
     LogListResponse,
     LogQueryParams,
@@ -18,6 +19,7 @@ from app.services.exceptions import LogNotFoundError, LogStorageError
 admin_router = APIRouter(
     prefix="/api/v1/admin",
     tags=["Admin"],
+    dependencies=[Depends(get_current_admin)],
 )
 admin_service = AdminService()
 
