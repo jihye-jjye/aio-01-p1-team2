@@ -1,38 +1,25 @@
 from fastapi import FastAPI
-from app.routers.chat_router import chat_router
-from app.routers.product_router import product_router
-from app.routers.auth_router import auth_router
-import app.core.chat_config
-from app.routers.item_router import item_router  
-from fastapi.staticfiles import StaticFiles
-from app.core.upload_config import UPLOAD_DIR
 
-# Swagger 문서(/docs)에 표시할 API 그룹 설명입니다.
+from app.routers.admin_auth_router import admin_auth_router
+from app.routers.admin_notice_router import admin_notice_router
+from app.routers.admin_router import admin_router
+from app.routers.feedback_router import feedback_router
+from app.routers.user_admin_router import user_admin_router
+
+
 tags_metadata = [
-    {
-        "name": "Auth",
-        "description": "Sign up, in, out",
-    },
-    {
-        "name": "Chat",
-        "description": "Gemini 모델을 사용해 사용자 메시지에 답변합니다.",
-    },
-    {
-        "name": "Product",
-        "description": "Supabase에 저장된 상품을 생성·조회·수정·삭제합니다.",
-    },
-    {
-        "name": "Item",
-        "description": "Supabase에 저장된 상품을 생성·조회·수정·삭제합니다.",
-    },
+    {"name": "Admin Auth", "description": "관리자 인증 API"},
+    {"name": "Admin", "description": "AI 로그 조회 및 KPI API"},
+    {"name": "User Admin", "description": "관리자용 회원 관리 API"},
+    {"name": "Notice Admin", "description": "관리자용 공지사항 관리 API"},
+    {"name": "Notice", "description": "공지사항 조회 API"},
+    {"name": "Feedback", "description": "AI 응답 피드백 API"},
 ]
-app = FastAPI(title="Main App", openapi_tags=tags_metadata)
 
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app = FastAPI(title="Admin Backend", openapi_tags=tags_metadata)
 
-app.include_router(auth_router)
-app.include_router(chat_router)
-app.include_router(product_router)
-app.include_router(item_router)
-
+app.include_router(admin_auth_router)
+app.include_router(admin_router)
+app.include_router(user_admin_router)
+app.include_router(admin_notice_router)
+app.include_router(feedback_router)

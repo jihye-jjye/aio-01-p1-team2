@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-from frontend_user.core.auth_sample import is_logged_in
+from core.auth_sample import is_logged_in
 from core.api_client import BACKEND_URL, BackendAPIError
-from clients.product_client import product_create, product_get_all, product_delete, product_update
+from clients.example_client import product_create, product_get_all, product_delete, product_update
 
 @st.dialog("create")
 def create_product() -> None:
