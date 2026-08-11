@@ -14,7 +14,7 @@ return count
 
 
 class RedisGeminiRateLimiter:
-    def __init__(self, redis: Redis, *, limit: int = 30, window_seconds: int = 600) -> None:
+    def __init__(self, redis: Redis, *, limit: int = 70, window_seconds: int = 600) -> None:
         self._redis = redis
         self._limit = limit
         self._window_seconds = window_seconds
