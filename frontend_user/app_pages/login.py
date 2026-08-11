@@ -3,8 +3,9 @@
 import streamlit as st
 
 from clients.auth_client import get_me, get_profile, login
+from clients.notification_client import get_login_notification_feed
 from core.api_client import BackendAPIError
-from core.session import persist_auth_state, save_auth_tokens
+from core.session import save_auth_tokens
 
 
 def initialize_login_state() -> None:
@@ -28,6 +29,11 @@ def apply_login_style() -> None:
         """
         <style>
         #MainMenu, footer, header { visibility: hidden; }
+        section[data-testid="stSidebar"],
+        button[data-testid="stBaseButton-headerNoPadding"],
+        [data-testid="collapsedControl"] {
+            display: none !important;
+        }
         .stApp {
             background: linear-gradient(rgba(8,11,22,.96), rgba(8,11,22,.96));
             color: #e8e8f0;
@@ -106,7 +112,36 @@ def submit_login(user_id: str, password: str, remember: bool, message_area) -> N
         # client는 요청만 담당하고, 받은 토큰은 session 모듈로 저장합니다.
         login_result = login(user_id, password)
         save_auth_tokens(login_result, remember=remember)
-        st.session_state.user = get_me()
+
+        # 로그인 직후 현재 사용자의 7일 일정과 미확인 알림을 조회합니다.
+        # 알림 조회 실패는 로그인 자체를 막지 않습니다.
+        try:
+            notification_feed = get_login_notification_feed()
+            st.session_state.notification_feed = notification_feed
+            st.session_state.notification_popup_pending = bool(
+                int(notification_feed.get("unread_count") or 0)
+            )
+            st.session_state.notification_login_toast_pending = any(
+                item.get("type") == "daily_tasks"
+                for item in notification_feed.get("upcoming") or []
+            )
+        except BackendAPIError as notification_error:
+            st.session_state.notification_feed = {}
+            st.session_state.notification_popup_pending = False
+            st.session_state.notification_login_toast_pending = False
+            st.session_state.notification_error = (
+                f"알림을 불러오지 못했어요. {notification_error.message}"
+            )
+
+        # GET /auth/me는 현재 id, role, session_id만 반환하므로
+        # 로그인 화면에서 알 수 있는 login_id를 함께 보관합니다.
+        current_user = get_me()
+        previous_user = st.session_state.get("user") or {}
+        st.session_state.user = {
+            **current_user,
+            "login_id": user_id.strip(),
+            "user_name": previous_user.get("user_name") or "",
+        }
         # 프로필이 없으면 신규 사용자이므로 AI 프로필 분석을 시작합니다.
         try:
             st.session_state.profile = get_profile()
@@ -116,8 +151,6 @@ def submit_login(user_id: str, password: str, remember: bool, message_area) -> N
                 st.session_state.next_screen = "onboarding"
             else:
                 raise
-        # 사용자와 프로필 조회 결과까지 새로고침 후 복원할 수 있도록 갱신합니다.
-        persist_auth_state()
     except BackendAPIError as error:
         if error.code == "INVALID_CREDENTIALS":
             message_area.error("아이디 또는 비밀번호가 올바르지 않습니다.")
@@ -170,6 +203,12 @@ def show_login_page() -> None:
             label="계정이 없으신가요? 회원가입",
             icon="✨",
         )
+        if st.button(
+            "← 처음 화면으로 돌아가기",
+            key="back_to_mode_selection",
+            use_container_width=True,
+        ):
+            st.switch_page("app_pages/home.py")
 
     with character_column:
         st.markdown(

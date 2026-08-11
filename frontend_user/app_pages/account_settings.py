@@ -35,19 +35,25 @@ def validate_values(
     normalized_login_id = login_id.strip().casefold()
     normalized_user_name = user_name.strip()
 
-    if not normalized_login_id:
-        errors.append("아이디를 입력해 주세요.")
-    elif not LOGIN_ID_PATTERN.fullmatch(normalized_login_id):
+    # 백엔드는 아이디와 이름 중 한 항목만 보내는 부분 수정을 허용합니다.
+    # 따라서 입력한 항목만 형식을 검사하고, 두 항목이 모두 비었을 때만 막습니다.
+    if normalized_login_id and not LOGIN_ID_PATTERN.fullmatch(normalized_login_id):
         errors.append("아이디는 영문 소문자, 숫자, 점, 밑줄, 하이픈으로 4~50자여야 합니다.")
 
-    if not normalized_user_name:
-        errors.append("이름을 입력해 주세요.")
-    elif len(normalized_user_name) > 50:
+    if normalized_user_name and len(normalized_user_name) > 50:
         errors.append("이름은 50자 이하로 입력해 주세요.")
 
-    if (
-        normalized_login_id == original_login_id
-        and normalized_user_name == original_user_name
+    if not normalized_login_id and not normalized_user_name:
+        errors.append("수정할 아이디 또는 이름을 입력해 주세요.")
+
+    login_id_changed = bool(
+        normalized_login_id and normalized_login_id != original_login_id
+    )
+    user_name_changed = bool(
+        normalized_user_name and normalized_user_name != original_user_name
+    )
+    if (normalized_login_id or normalized_user_name) and not (
+        login_id_changed or user_name_changed
     ):
         errors.append("변경된 내용이 없습니다.")
 
@@ -68,12 +74,14 @@ def submit_update(
     result = update_me(
         login_id=(
             normalized_login_id
-            if normalized_login_id != original_login_id
+            if normalized_login_id
+            and normalized_login_id != original_login_id
             else None
         ),
         user_name=(
             normalized_user_name
-            if normalized_user_name != original_user_name
+            if normalized_user_name
+            and normalized_user_name != original_user_name
             else None
         ),
     )
@@ -102,17 +110,19 @@ def render_delete_account() -> None:
             delete_submitted = st.form_submit_button(
                 "계정 영구 삭제",
                 use_container_width=True,
-                disabled=confirmation.strip() != "회원탈퇴",
             )
 
         if delete_submitted:
-            try:
-                with st.spinner("계정 정보를 삭제하고 있어요..."):
-                    delete_me()
-                clear_auth_state()
-                st.switch_page("app_pages/home.py")
-            except BackendAPIError as error:
-                show_error(error)
+            if confirmation.strip() != "회원탈퇴":
+                st.warning("탈퇴를 진행하려면 회원탈퇴를 정확히 입력해 주세요.")
+            else:
+                try:
+                    with st.spinner("계정 정보를 삭제하고 있어요..."):
+                        delete_me()
+                    clear_auth_state()
+                    st.switch_page("app_pages/home.py")
+                except BackendAPIError as error:
+                    show_error(error)
 
 
 def main() -> None:
@@ -141,7 +151,7 @@ def main() -> None:
             login_id = st.text_input(
                 "아이디",
                 value=original_login_id,
-                placeholder="영문 소문자와 숫자 4자 이상",
+                placeholder="4자 이상",
                 max_chars=50,
             )
             user_name = st.text_input(
@@ -178,9 +188,6 @@ def main() -> None:
                 st.rerun()
             except BackendAPIError as error:
                 show_error(error)
-
-    if st.button("대시보드로 돌아가기", use_container_width=True):
-        st.switch_page("app_pages/dashboard.py")
 
     render_delete_account()
 

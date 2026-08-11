@@ -8,7 +8,9 @@ from clients.auth_client import get_profile
 from clients.plan_client import get_active_plan
 from clients.quest_client import get_today_quests
 from core.api_client import BackendAPIError
+from core.notification_popup import render_notification_popup
 from core.session import is_logged_in
+from core.styles import apply_user_page_background, render_page_header
 
 
 def clamp_percent(value: object) -> int:
@@ -74,7 +76,8 @@ def render_header(profile: dict) -> None:
     """캐릭터와 사용자 인사를 한 줄 헤더로 보여줍니다."""
 
     user = st.session_state.get("user") or {}
-    user_name = user.get("user_name") or "이름 미등록"
+    # 백엔드 GET /auth/me에 user_name이 없는 동안은 login_id를 안전한 대체값으로 사용합니다.
+    user_name = user.get("user_name") or user.get("login_id") or "사용자"
     character, level = get_character_level(profile)
 
     with st.container(border=True):
@@ -196,8 +199,14 @@ def render_quick_menu(plan: dict | None) -> None:
 def render_dashboard(profile: dict, today: dict, plan: dict | None) -> None:
     """참고 이미지와 같은 순서로 대시보드 카드를 배치합니다."""
 
-    st.caption("HOME · DASHBOARD")
+    apply_user_page_background()
+    render_page_header(
+        "HOME · DASHBOARD",
+        "나의 커리어 홈",
+        "오늘의 미션부터 목표까지, 지금 필요한 것만 빠르게 체크해요.",
+    )
     render_header(profile)
+    render_notification_popup()
 
     overview_column, quest_column = st.columns([3, 1.2])
     with overview_column:

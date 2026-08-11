@@ -14,6 +14,7 @@ from clients.plan_client import (
 )
 from core.api_client import BackendAPIError
 from core.session import is_logged_in
+from core.styles import apply_user_page_background, render_page_header
 
 
 # 한 번에 최대 28일 조회
@@ -143,9 +144,11 @@ def stage_progress(overall_percent: int, stage_index: int) -> int:
 def render_header() -> None:
     """페이지 제목을 보여줍니다."""
 
-    st.caption("MY CAREER QUEST")
-    st.title("나의 취업 로드맵")
-    st.caption("AI가 만든 계획에서 지금 위치와 다음 성장 단계를 확인해 보세요.")
+    render_page_header(
+        "MY CAREER QUEST",
+        "나의 취업 로드맵",
+        "내 커리어 루트, 지금 어디쯤인지 한눈에 체크해요.",
+    )
 
 
 def render_summary(plan: dict, is_proposal: bool = False) -> None:
@@ -272,7 +275,6 @@ def render_stage_detail(plan: dict, stage_items: list[list[dict]]) -> None:
     selected_index = max(0, min(3, selected_index))
     number, english_title, korean_title = CAREER_STAGES[selected_index]
     milestones = stage_items[selected_index]
-    job_update = st.session_state.get("roadmap_job_updates") or {}
 
     st.subheader("선택한 단계 상세")
     with st.container(border=True):
@@ -302,12 +304,6 @@ def render_stage_detail(plan: dict, stage_items: list[list[dict]]) -> None:
                     icon = "✅" if task.get("status") == "completed" else "▫️"
                     st.write(f'{icon} {task.get("title") or "할 일"}')
 
-        # 추천 공고 분석으로 추가된 내용은 실무 역량 상세에서 보여줍니다.
-        if selected_index == 1 and job_update:
-            st.write("**✨ AI가 공고 분석으로 추가한 내용**")
-            for task_title in job_update.get("tasks") or []:
-                st.write(f"• {task_title}")
-
     st.caption("할 일 완료와 EXP 확인은 ‘오늘 할 일’ 페이지에서 진행합니다.")
 
 
@@ -322,14 +318,7 @@ def render_active_plan(plan: dict) -> None:
 
 
 def render_proposal(proposal: dict) -> None:
-    """AI가 만든 로드맵 제안을 확인하고 적용하거나 거절합니다."""
-
-    st.info("AI가 프로필을 분석해 로드맵 초안을 만들었어요. 확인 후 시작해 주세요.")
-    render_summary(proposal, is_proposal=True)
-    st.divider()
-    stage_items = render_stages(proposal, is_proposal=True)
-    st.divider()
-    render_stage_detail(proposal, stage_items)
+    """AI가 만든 로드맵 제안을 확인하고 시작하거나 새 제안을 요청합니다."""
 
     proposal_id = proposal.get("id") or proposal.get("proposal_id")
     apply_column, reject_column = st.columns(2)
@@ -348,6 +337,14 @@ def render_proposal(proposal: dict) -> None:
                 st.session_state.roadmap_plan = plan
                 st.session_state.roadmap_proposal = None
                 st.session_state.roadmap_request_id = None
+
+                # 계획 수락 전 조회한 '오늘 할 일 없음' 결과가 남아 있으면
+                # 새 계획의 일정이 생성돼도 이전 캐시가 계속 표시됩니다.
+                # 다음 진입에서 현재 사용자의 퀘스트를 다시 조회하도록 초기화합니다.
+                st.session_state.today_quests_data = None
+                st.session_state.today_quests_loaded = False
+                st.session_state.today_quests_flash = None
+                st.session_state.today_quests_user_id = None
                 st.session_state.roadmap_flash = "로드맵이 적용되었어요."
                 st.rerun()
             except BackendAPIError as error:
@@ -357,22 +354,30 @@ def render_proposal(proposal: dict) -> None:
 
     with reject_column:
         if st.button(
-            "다시 만들기",
+            "새로운 로드맵 제안받기",
             use_container_width=True,
             disabled=not proposal_id or st.session_state.roadmap_busy,
         ):
             try:
                 st.session_state.roadmap_busy = True
-                with st.spinner("현재 제안을 정리하고 있어요..."):
+                with st.spinner("새로운 로드맵을 준비하고 있어요..."):
                     reject_proposal(str(proposal_id))
                 st.session_state.roadmap_proposal = None
                 st.session_state.roadmap_request_id = None
-                st.session_state.roadmap_flash = "새 로드맵을 다시 생성할 수 있어요."
+                st.session_state.roadmap_flash = "새로운 로드맵 제안을 받을 수 있어요."
                 st.rerun()
             except BackendAPIError as error:
                 show_error(error)
             finally:
                 st.session_state.roadmap_busy = False
+
+    st.divider()
+    st.info("AI가 프로필을 분석해 로드맵 초안을 만들었어요. 확인 후 시작해 주세요.")
+    render_summary(proposal, is_proposal=True)
+    st.divider()
+    stage_items = render_stages(proposal, is_proposal=True)
+    st.divider()
+    render_stage_detail(proposal, stage_items)
 
 
 def render_empty_state() -> None:
@@ -409,6 +414,7 @@ def main() -> None:
     """로그인 상태와 API 결과에 따라 알맞은 로드맵 화면을 보여줍니다."""
 
     initialize_state()
+    apply_user_page_background()
 
     if not is_logged_in():
         st.warning("로그인이 필요한 페이지입니다.")

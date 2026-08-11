@@ -1,8 +1,10 @@
 import streamlit as st
 import streamlit.components.v1 as components
+from uuid import uuid4
 
-from clients.assistant_client import start_assistant_session
+from clients.assistant_client import send_assistant_message, start_assistant_session
 from core.api_client import BackendAPIError
+from core.styles import apply_user_page_background, render_page_header
 
 
 SUGGESTED_PROMPTS = [
@@ -26,6 +28,12 @@ def initialize_chat_state() -> None:
         st.session_state.assistant_initializing = False
     if "assistant_init_attempted" not in st.session_state:
         st.session_state.assistant_init_attempted = False
+    if "assistant_revision" not in st.session_state:
+        st.session_state.assistant_revision = 0
+    if "assistant_expires_at" not in st.session_state:
+        st.session_state.assistant_expires_at = None
+    if "assistant_error" not in st.session_state:
+        st.session_state.assistant_error = None
 
 
 def initialize_assistant_session(message_area) -> None:
@@ -44,6 +52,8 @@ def initialize_assistant_session(message_area) -> None:
         with st.spinner("AI 상담을 준비하고 있습니다..."):
             result = start_assistant_session()
         st.session_state.assistant_session_id = result["session_id"]
+        st.session_state.assistant_revision = int(result["revision"])
+        st.session_state.assistant_expires_at = result["expires_at"]
         st.session_state.assistant_messages = [
             {
                 "role": "assistant",
@@ -60,22 +70,17 @@ def apply_chat_style() -> None:
     st.markdown(
         """
         <style>
-        #MainMenu, footer, header { visibility: hidden; }
-        .stApp { background: #f5f7fb; color: #111827; }
-        .block-container { max-width: 1100px; padding-top: 2.3rem; }
-        .chat-header {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 20px 24px; background: #ffffff; border: 1px solid #e5e7eb;
-            border-radius: 16px; box-shadow: 0 8px 24px rgba(15,23,42,.06);
-            margin-bottom: 20px;
+        #MainMenu, footer { visibility: hidden; }
+        .st-key-assistant_new_chat button {
+            color: #ff78c5 !important;
+            background: #251124 !important;
+            border: 1px solid #b4387f !important;
         }
-        .chat-title { color: #111827; font-size: 25px; font-weight: 900; }
-        .chat-subtitle { color: #6b7280; font-size: 14px; margin-top: 4px; }
-        .online-badge {
-            padding: 7px 11px; border-radius: 999px; color: #15803d;
-            background: #dcfce7; font-size: 12px; font-weight: 800;
+        .st-key-assistant_new_chat button:hover {
+            color: #ffffff !important;
+            background: #3b1738 !important;
+            border-color: #ff78c5 !important;
         }
-        .suggestion-title { color: #6b7280; font-size: 13px; font-weight: 700; }
         div[data-testid="stChatMessage"] {
             background: #ffffff; border: 1px solid #e5e7eb;
             border-radius: 14px; padding: 8px 12px; margin-bottom: 10px;
@@ -117,18 +122,50 @@ def apply_chat_style() -> None:
     )
 
 
-def submit_message(text: str) -> None:
-    """질문을 화면 상태에 저장합니다. API 호출은 client 연결 단계에서 추가합니다."""
+def submit_message(text: str) -> bool:
+    """사용자 질문을 백엔드 상담 API로 보내고 AI 답변을 저장합니다."""
 
     normalized_text = text.strip()
     if not normalized_text:
-        return
+        return False
 
-    # 아직 실제 전송 전이므로 사용자 질문과 미처리 질문 상태만 저장합니다.
+    session_id = st.session_state.get("assistant_session_id")
+    if not session_id:
+        st.session_state.assistant_error = "상담을 준비하지 못했어요. 다시 시도해 주세요."
+        return False
+
     st.session_state.assistant_messages.append(
         {"role": "user", "content": normalized_text}
     )
     st.session_state.assistant_pending_question = normalized_text
+
+    try:
+        st.session_state.assistant_submitting = True
+        with st.spinner("AI 코치가 답변을 준비하고 있어요..."):
+            result = send_assistant_message(
+                str(session_id),
+                int(st.session_state.assistant_revision),
+                normalized_text,
+                request_id=str(uuid4()),
+            )
+
+        st.session_state.assistant_revision = int(result["revision"])
+        st.session_state.assistant_expires_at = result["expires_at"]
+        st.session_state.assistant_messages.append(
+            {"role": "assistant", "content": result["assistant_message"]}
+        )
+        st.session_state.assistant_pending_question = None
+        return True
+    except BackendAPIError as error:
+        st.session_state.assistant_error = error.message
+        if error.code == "ASSISTANT_SESSION_EXPIRED":
+            st.session_state.pop("assistant_session_id", None)
+            st.session_state.assistant_revision = 0
+            st.session_state.assistant_expires_at = None
+            st.session_state.assistant_init_attempted = False
+        return False
+    finally:
+        st.session_state.assistant_submitting = False
 
 
 def scroll_to_latest_message() -> None:
@@ -167,47 +204,25 @@ def show_assistant() -> None:
     """AI 상담 헤더, 추천 질문, 대화 목록, 입력 폼을 순서대로 표시합니다."""
 
     initialize_chat_state()
+    apply_user_page_background()
     apply_chat_style()
 
-    message_area = st.empty()
+    render_page_header(
+        "AI CAREER CHAT",
+        "AI 커리어 상담",
+        "막히는 순간, AI 코치에게 바로 물어보세요.",
+    )
 
+    # 상태 알림은 페이지 제목을 가리지 않도록 공통 헤더 바로 아래에 표시합니다.
+    message_area = st.empty()
     flash_message = st.session_state.pop("assistant_flash", None)
     if flash_message:
         message_area.success(flash_message)
+    error_message = st.session_state.pop("assistant_error", None)
+    if error_message:
+        message_area.error(error_message)
 
     initialize_assistant_session(message_area)
-
-    st.markdown(
-        """
-        <div class="chat-header">
-            <div>
-                <div class="chat-title">AI 커리어 코치</div>
-                <div class="chat-subtitle">취업 준비에 필요한 내용을 편하게 질문해 주세요.</div>
-            </div>
-            <div class="online-badge">● UI READY</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    top_left, top_right = st.columns([4, 1])
-    with top_right:
-        if st.button("새 대화", use_container_width=True):
-            st.session_state.assistant_messages = []
-            st.session_state.assistant_pending_question = None
-            st.session_state.pop("assistant_session_id", None)
-            st.session_state.assistant_init_attempted = False
-            st.rerun()
-
-    st.markdown('<div class="suggestion-title">추천 질문</div>', unsafe_allow_html=True)
-    prompt_columns = st.columns(3)
-    for column, prompt in zip(prompt_columns, SUGGESTED_PROMPTS):
-        with column:
-            if st.button(prompt, use_container_width=True, key=f"prompt_{prompt}"):
-                submit_message(prompt)
-                st.rerun()
-
-    st.divider()
 
     if not st.session_state.assistant_messages:
         if st.session_state.assistant_init_attempted:
@@ -217,7 +232,7 @@ def show_assistant() -> None:
 
     # 대화 내용과 입력창을 한 컨테이너에 넣어 하나의 AI 상담 화면으로 구성합니다.
     with st.container(border=True):
-        with st.container(height=410, border=False):
+        with st.container(height=360, border=False):
             for message in st.session_state.assistant_messages:
                 with st.chat_message(message["role"]):
                     # AI 응답과 사용자 입력은 HTML이 아닌 일반 text로 렌더링합니다.
@@ -226,10 +241,39 @@ def show_assistant() -> None:
             if not st.session_state.assistant_messages:
                 st.info("AI 상담을 시작하려면 아래에 질문을 입력해 주세요.")
 
-            if st.session_state.assistant_pending_question:
-                st.info("질문이 화면 상태에 저장되었습니다. AI API 연결 후 응답을 표시합니다.")
-
         scroll_to_latest_message()
+
+        # 대화를 읽은 뒤 바로 찾을 수 있도록 입력 영역 위에 새 대화 버튼을 둡니다.
+        _, new_chat_column = st.columns([4, 1.2], vertical_alignment="center")
+        with new_chat_column:
+            if st.button(
+                "＋ 새 대화",
+                use_container_width=True,
+                key="assistant_new_chat",
+                disabled=st.session_state.assistant_submitting,
+                help="현재 화면의 대화를 비우고 새 상담을 시작합니다.",
+            ):
+                st.session_state.assistant_messages = []
+                st.session_state.assistant_pending_question = None
+                st.session_state.pop("assistant_session_id", None)
+                st.session_state.assistant_revision = 0
+                st.session_state.assistant_expires_at = None
+                st.session_state.assistant_init_attempted = False
+                st.rerun()
+
+        # 추천 질문은 실제 입력창 바로 위에 배치합니다.
+        st.caption("이런 질문은 어때요?")
+        prompt_columns = st.columns(3)
+        for column, prompt in zip(prompt_columns, SUGGESTED_PROMPTS):
+            with column:
+                if st.button(
+                    prompt,
+                    use_container_width=True,
+                    key=f"prompt_{prompt}",
+                    disabled=st.session_state.assistant_submitting,
+                ):
+                    submit_message(prompt)
+                    st.rerun()
 
         # 컨테이너 안에서 사용하면 입력창이 대화 영역 바로 아래에 표시됩니다.
         user_text = st.chat_input(
