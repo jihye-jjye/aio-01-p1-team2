@@ -107,7 +107,7 @@ def submit_login(user_id: str, password: str, remember: bool, message_area) -> N
         login_result = login(user_id, password)
         save_auth_tokens(login_result, remember=remember)
         st.session_state.user = get_me()
-        # 프로필이 없으면 신규 사용자이므로 온보딩을 시작합니다.
+        # 프로필이 없으면 신규 사용자이므로 AI 프로필 분석을 시작합니다.
         try:
             st.session_state.profile = get_profile()
             st.session_state.next_screen = "main"
@@ -131,8 +131,7 @@ def submit_login(user_id: str, password: str, remember: bool, message_area) -> N
     if st.session_state.next_screen == "onboarding":
         st.switch_page("app_pages/onboarding.py")
     else:
-        st.session_state.assistant_flash = "로그인되었습니다."
-        st.switch_page("app_pages/assistant.py")
+        st.switch_page("app_pages/dashboard.py")
 
 
 def show_login_page() -> None:

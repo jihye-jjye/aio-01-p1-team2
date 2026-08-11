@@ -36,6 +36,24 @@ def get_me() -> dict:
     return request("GET", "/auth/me")
 
 
+def update_me(login_id: str | None = None, user_name: str | None = None) -> dict:
+    """현재 사용자의 로그인 ID 또는 사용자 이름을 수정합니다."""
+
+    body = {}
+    if login_id is not None:
+        body["login_id"] = login_id.strip().casefold()
+    if user_name is not None:
+        body["user_name"] = user_name.strip()
+
+    return request("PATCH", "/auth/me", json=body)
+
+
+def delete_me() -> None:
+    """현재 로그인한 계정과 사용자 소유 데이터를 영구 삭제합니다."""
+
+    request("DELETE", "/auth/me")
+
+
 def get_profile() -> dict:
     """현재 사용자의 취업 프로필을 조회합니다."""
 

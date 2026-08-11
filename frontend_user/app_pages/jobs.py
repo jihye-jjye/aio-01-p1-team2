@@ -194,8 +194,8 @@ def show_api_error(error: BackendAPIError) -> None:
     if error.status_code == 401:
         st.error("로그인이 만료됐어요. 다시 로그인해 주세요.")
     elif error.code == "PROFILE_NOT_FOUND":
-        st.warning("추천을 받으려면 먼저 온보딩 프로필을 완성해 주세요.")
-        if st.button("프로필 완성하러 가기", type="primary"):
+        st.warning("AI가 분석할 취업 프로필을 먼저 완성해 주세요.")
+        if st.button("프로필 완성하러가기", type="primary"):
             st.switch_page("app_pages/onboarding.py")
     else:
         st.error(f"추천 공고를 불러오지 못했어요. {error.message}")

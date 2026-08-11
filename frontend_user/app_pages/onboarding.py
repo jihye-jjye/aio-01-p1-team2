@@ -92,6 +92,20 @@ def parse_notification_time_answer(value: str) -> str | None:
     return f"{hour:02d}:{minute:02d}"
 
 
+def format_profile_value(field: str, value: object) -> str:
+    """프로필 검토 화면의 값을 읽기 쉬운 문자열로 바꿉니다."""
+
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    if value in (None, ""):
+        return "입력되지 않음"
+    if field == "daily_notification_time":
+        time_parts = str(value).split(":")
+        if len(time_parts) >= 2:
+            return f"{time_parts[0]}:{time_parts[1]}"
+    return str(value)
+
+
 def is_notification_time_question(latest: dict) -> bool:
     """현재 AI 질문이 알림 시간 입력 단계인지 응답 내용으로 판단합니다."""
 
@@ -153,7 +167,7 @@ def validate_draft_profile(draft: dict) -> list[str]:
 
 
 def initialize_state() -> None:
-    """온보딩 진행 중 필요한 화면 상태를 최초 한 번만 만듭니다."""
+    """AI 프로필 분석 중 필요한 화면 상태를 최초 한 번만 만듭니다."""
 
     defaults = {
         "onboarding_latest": None,
@@ -185,6 +199,19 @@ def save_response(
         st.session_state.onboarding_messages.append(
             {"role": "assistant", "content": assistant_message}
         )
+
+
+def get_ai_confirmed_profile(latest: dict, *, completed: bool = False) -> dict:
+    """사용자 답변 원문이 아닌 AI가 구조화한 프로필만 반환합니다.
+
+    검토 단계에서는 AI가 정리한 ``draft_profile``을 사용하고,
+    저장 완료 단계에서는 DB 저장 결과인 ``stored_profile``을 사용합니다.
+    """
+
+    payload = latest.get("payload") or {}
+    profile_key = "stored_profile" if completed else "draft_profile"
+    profile = payload.get(profile_key)
+    return profile if isinstance(profile, dict) else {}
 
 
 def apply_onboarding_style() -> None:
@@ -290,7 +317,7 @@ def apply_onboarding_style() -> None:
 
 
 def show_api_error(error: BackendAPIError, message_area) -> None:
-    """온보딩에서 자주 발생하는 오류 코드를 사용자 문장으로 바꿉니다."""
+    """AI 프로필 분석 중 발생하는 오류 코드를 사용자 문장으로 바꿉니다."""
 
     if error.code in {"UNAUTHORIZED", "ONBOARDING_SESSION_EXPIRED"}:
         clear_auth_state()
@@ -306,7 +333,7 @@ def show_api_error(error: BackendAPIError, message_area) -> None:
 
 
 def start_session(message_area) -> None:
-    """백엔드에 온보딩 세션을 생성하고 첫 AI 질문을 저장합니다."""
+    """백엔드에 AI 프로필 분석 세션을 생성하고 첫 질문을 저장합니다."""
 
     try:
         st.session_state.onboarding_submitting = True
@@ -394,9 +421,6 @@ def render_conversation(latest: dict, message_area) -> None:
         if choices:
             st.caption("선택 예시: " + " · ".join(choices))
 
-        if is_notification_time_question(latest):
-            st.caption("⏰ 알림 시간 예시: 오전 9시 · 오후 6시 30분 · 09:00")
-
         # 대기 말풍선의 높이를 미리 확보해 로딩 중에도 입력창이 밀리지 않게 합니다.
         assistant_waiting_area = st.container(height=72, border=False)
 
@@ -434,21 +458,23 @@ def render_conversation(latest: dict, message_area) -> None:
 
 
 def render_review(latest: dict, message_area) -> None:
-    """8개 프로필 결과를 보여 주고 수정·확정·재시작을 처리합니다."""
+    """AI가 정리한 8개 프로필 결과의 확정 또는 재시작을 처리합니다."""
 
     st.markdown(
         """
         <div class="review-heading">
             <div class="review-title">AI 진단 결과를 확인해 주세요</div>
-            <div class="review-copy">저장하기 전에 작성된 프로필을 확인하고, 잘못된 내용은 AI에게 수정 요청할 수 있습니다.</div>
+            <div class="review-copy">내용이 맞으면 확정하고, 다시 작성하려면 처음부터 AI 진단을 시작해 주세요.</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    draft = latest["payload"].get("draft_profile", {})
+    # 채팅창에 표시한 사용자 원문이 아니라 AI가 오타와 문맥을 정리해
+    # 구조화한 draft_profile을 검토 카드에 표시합니다.
+    draft = get_ai_confirmed_profile(latest)
     validation_errors = validate_draft_profile(draft)
 
-    # 의심 값이 있으면 확정을 막고 AI에게 수정 요청을 보내도록 안내합니다.
+    # 의심 값이 있으면 확정을 막고 처음부터 다시 진단하도록 안내합니다.
     if validation_errors:
         with message_area.container():
             st.error("프로필에서 확인이 필요한 항목을 발견했습니다.")
@@ -461,11 +487,9 @@ def render_review(latest: dict, message_area) -> None:
         columns = st.columns(2)
         for column, (field, label) in zip(columns, profile_items[index:index + 2]):
             value = draft.get(field)
-            if isinstance(value, list):
-                value = ", ".join(str(item) for item in value)
             if value is None and field == "target_company":
                 value = "희망 기업 없음"
-            display_value = str(value or "입력되지 않음")
+            display_value = format_profile_value(field, value)
             with column:
                 st.markdown(
                     f"""
@@ -491,55 +515,6 @@ def render_review(latest: dict, message_area) -> None:
             unsafe_allow_html=True,
         )
 
-    with st.expander("일부 내용 수정하기"):
-        with st.form("review_edit_form", clear_on_submit=True):
-            selected_field = st.selectbox(
-                "수정할 항목",
-                options=list(PROFILE_LABELS.keys()),
-                format_func=lambda field: (
-                    f"{PROFILE_ICONS[field]} {PROFILE_LABELS[field]}"
-                ),
-            )
-            selected_value = draft.get(selected_field)
-            if isinstance(selected_value, list):
-                selected_value = ", ".join(str(item) for item in selected_value)
-            st.caption(f"현재 값: {selected_value or '입력되지 않음'}")
-            edited_value = st.text_area(
-                "새로운 내용",
-                placeholder="선택한 항목에 적용할 내용을 입력해 주세요.",
-                max_chars=4000,
-            )
-            edit_submitted = st.form_submit_button(
-                "선택 항목 수정",
-                use_container_width=True,
-            )
-
-    if edit_submitted:
-        if not edited_value.strip():
-            message_area.warning("새로운 내용을 입력해 주세요.")
-        else:
-            try:
-                field_label = PROFILE_LABELS[selected_field]
-                normalized_edit = edited_value.strip()
-                if selected_field == "daily_notification_time":
-                    parsed_time = parse_notification_time_answer(normalized_edit)
-                    if parsed_time:
-                        normalized_edit = parsed_time
-                # 백엔드의 review 수정 계약은 자연어 입력이므로 필드 선택 결과를
-                # 한 항목만 바꾸라는 명확한 문장으로 변환해 전송합니다.
-                edit_request = (
-                    f"{field_label} 항목만 '{normalized_edit}'으로 수정해 줘. "
-                    "다른 프로필 항목은 변경하지 말고 그대로 유지해 줘."
-                )
-                response, pending = send_message(
-                    latest["session_id"],
-                    edit_request,
-                )
-                save_response(response, pending, user_text=edit_request)
-                st.rerun()
-            except BackendAPIError as error:
-                show_api_error(error, message_area)
-
     confirm_column, restart_column = st.columns(2)
     if confirm_column.button(
         "프로필 확정",
@@ -547,7 +522,7 @@ def render_review(latest: dict, message_area) -> None:
         use_container_width=True,
         disabled=bool(validation_errors),
         help=(
-            "확인이 필요한 값을 먼저 수정해 주세요."
+            "확인이 필요한 값이 있어 처음부터 다시 진단해야 합니다."
             if validation_errors
             else "검토한 프로필을 저장합니다."
         ),
@@ -584,9 +559,15 @@ def render_review(latest: dict, message_area) -> None:
 
 
 def render_completed(latest: dict, message_area) -> None:
-    """온보딩 완료 후 DB에 저장된 최종 프로필을 다시 조회합니다."""
+    """AI 프로필 분석 완료 후 DB에 저장된 최종 프로필을 다시 조회합니다."""
 
     st.success("취업 프로필 저장이 완료되었습니다.")
+    # 확정 응답의 stored_profile을 먼저 반영합니다. 이후 GET /profile로
+    # DB에 실제 저장된 최종 값을 다시 조회해 화면 상태를 확정합니다.
+    confirmed_profile = get_ai_confirmed_profile(latest, completed=True)
+    if confirmed_profile:
+        st.session_state.profile = confirmed_profile
+
     try:
         st.session_state.profile = get_profile()
     except BackendAPIError as error:
@@ -596,6 +577,14 @@ def render_completed(latest: dict, message_area) -> None:
         if st.button("프로필 조회 다시 시도"):
             st.rerun()
         return
+
+    # AI와 함께 완성한 새 프로필을 기준으로 추천 API를 다시 호출해야 합니다.
+    # 이전 추천 결과가 session_state에 남아 있으면 추천 공고 페이지가
+    # 기존 공고를 그대로 보여주므로 추천 관련 화면 상태를 초기화합니다.
+    st.session_state.jobs_loaded = False
+    st.session_state.recommended_job = None
+    st.session_state.jobs_error = None
+    st.session_state.plan_update_preview = None
 
     st.caption("완성된 프로필을 기준으로 AI가 지금 가장 잘 맞는 공고를 찾아드려요.")
     if st.button(
@@ -667,7 +656,7 @@ def show_onboarding() -> None:
     elif step == "completed" and latest.get("completed") is True:
         render_completed(latest, message_area)
     else:
-        message_area.error("백엔드에서 알 수 없는 온보딩 상태를 반환했습니다.")
+        message_area.error("백엔드에서 알 수 없는 AI 프로필 분석 상태를 반환했습니다.")
 
 
 show_onboarding()

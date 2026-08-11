@@ -6,7 +6,7 @@ import streamlit as st
 
 from clients.auth_client import signup
 from core.api_client import BackendAPIError
-from core.session import save_auth_tokens
+from core.session import persist_auth_state, save_auth_tokens
 
 
 LOGIN_ID_PATTERN = re.compile(r"^[a-z0-9._-]{4,50}$")
@@ -137,7 +137,7 @@ def handle_signup(
     password_confirm: str,
     message_area,
 ) -> None:
-    """검증을 통과한 값을 백엔드에 보내고 온보딩으로 이동합니다."""
+    """검증을 통과한 값을 백엔드에 보내고 AI 프로필 분석으로 이동합니다."""
 
     errors = validate_signup(
         user_name,
@@ -164,11 +164,21 @@ def handle_signup(
         )
         save_auth_tokens(signup_result)
 
+        # 회원가입 화면에서 받은 이름은 GET /auth/me가 이름을 제공하기 전까지
+        # 대시보드 인사말에 사용할 수 있도록 인증 세션에 함께 저장합니다.
+        st.session_state.user = {
+            "id": str(signup_result.get("user_id") or ""),
+            "login_id": str(signup_result.get("login_id") or login_id),
+            "user_name": user_name.strip(),
+            "role": "user",
+        }
+        persist_auth_state()
+
     except BackendAPIError as error:
         show_signup_error(error, message_area)
         return
 
-    # 회원가입 응답으로 받은 토큰을 유지하고 온보딩을 바로 시작합니다.
+    # 회원가입 응답으로 받은 토큰을 유지하고 AI 프로필 분석을 바로 시작합니다.
     # 다음 페이지에서 한 번만 보여 줄 안내 문구입니다.
     st.session_state.onboarding_flash = (
         "회원가입이 완료되었습니다. 취업 프로필 작성을 시작합니다."

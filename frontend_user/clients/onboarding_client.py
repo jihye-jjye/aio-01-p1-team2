@@ -12,7 +12,7 @@ def _pending(path: str, body: dict) -> dict:
 
 
 def start_onboarding() -> tuple[dict, dict]:
-    """새 온보딩 세션을 시작하고 AI의 첫 질문을 받습니다."""
+    """새 AI 프로필 분석 세션을 시작하고 첫 질문을 받습니다."""
 
     path = "/onboarding/sessions"
     body = {"request_id": str(uuid4())}

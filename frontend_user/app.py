@@ -55,7 +55,7 @@ admin_login_page = st.Page(
 )
 onboarding_page = st.Page(
     "app_pages/onboarding.py",
-    title="온보딩",
+    title="AI 프로필 분석",
     icon="💬",
 )
 assistant_page = st.Page(
@@ -67,6 +67,16 @@ profile_page = st.Page(
     "app_pages/profile.py",
     title="내 프로필",
     icon="👤",
+)
+dashboard_page = st.Page(
+    "app_pages/dashboard.py",
+    title="대시보드",
+    icon="🏠",
+)
+account_settings_page = st.Page(
+    "app_pages/account_settings.py",
+    title="사용자 정보 수정",
+    icon="⚙️",
 )
 roadmap_page = st.Page(
     "app_pages/roadmap.py",
@@ -94,6 +104,8 @@ navigation = st.navigation(
         onboarding_page,
         assistant_page,
         profile_page,
+        dashboard_page,
+        account_settings_page,
         roadmap_page,
         today_quests_page,
         jobs_page,
@@ -111,7 +123,8 @@ if is_logged_in():
         st.divider()
 
         # 사용자 기능 페이지가 추가되면 이곳에 링크 등록
-        st.page_link(profile_page, label="내 프로필", icon="👤")
+        st.page_link(dashboard_page, label="홈", icon="🏠")
+        st.page_link(profile_page, label="취업 프로필", icon="👤")
         st.page_link(roadmap_page, label="취업 로드맵", icon="🗺️")
         st.page_link(today_quests_page, label="오늘 할 일", icon="✅")
         st.page_link(jobs_page, label="추천 공고", icon="💼")

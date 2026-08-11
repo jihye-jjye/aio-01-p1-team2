@@ -49,6 +49,12 @@ ROADMAP_STATE_KEYS = (
     "plan_update_preview",
 )
 
+JOB_STATE_KEYS = (
+    "jobs_loaded",
+    "recommended_job",
+    "jobs_error",
+)
+
 
 @st.cache_resource
 def _get_auth_store() -> tuple[dict[str, dict], Lock]:
@@ -160,6 +166,7 @@ def clear_auth_state() -> None:
         + ONBOARDING_STATE_KEYS
         + ASSISTANT_STATE_KEYS
         + ROADMAP_STATE_KEYS
+        + JOB_STATE_KEYS
     ):
         st.session_state.pop(key, None)
     clear_persisted_auth()

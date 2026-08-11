@@ -72,6 +72,9 @@ def show_error(error: BackendAPIError) -> None:
         return
 
     st.error(messages.get(error.code, error.message))
+    if error.code == "PROFILE_NOT_FOUND":
+        if st.button("프로필 완성하러가기", type="primary"):
+            st.switch_page("app_pages/onboarding.py")
 
 
 def load_roadmap() -> None:

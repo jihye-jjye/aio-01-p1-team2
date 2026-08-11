@@ -9,7 +9,7 @@ from core.api_client import BackendAPIError
 from core.session import is_logged_in
 
 
-# 온보딩에서 저장하는 8개 항목과 같은 순서로 보여 줍니다.
+# AI와 함께 작성해 저장하는 8개 항목과 같은 순서로 보여 줍니다.
 PROFILE_FIELDS = {
     "target_role": ("🎯", "목표 직무"),
     "skills": ("🛠️", "보유 기술"),
@@ -64,13 +64,21 @@ def apply_profile_style() -> None:
     )
 
 
-def display_value(value) -> str:
+def display_value(value, field: str | None = None) -> str:
     """목록과 빈 값을 사용자가 읽기 쉬운 문자열로 바꿉니다."""
 
     if isinstance(value, list):
         return ", ".join(str(item) for item in value) if value else "아직 입력되지 않았습니다."
     if value in (None, ""):
         return "아직 입력되지 않았습니다."
+
+    # 백엔드는 10:00:00+09:00처럼 타임존이 포함된 시간을 반환합니다.
+    # 프로필 화면에서는 사용자가 읽기 쉬운 HH:MM까지만 표시합니다.
+    if field == "daily_notification_time":
+        time_parts = str(value).split(":")
+        if len(time_parts) >= 2:
+            return f"{time_parts[0]}:{time_parts[1]}"
+
     return str(value)
 
 
@@ -104,7 +112,7 @@ def render_profile_cards(profile: dict) -> None:
                         unsafe_allow_html=True,
                     )
                     st.markdown(
-                        f'<div class="field-value">{escape(display_value(profile.get(field)))}</div>',
+                        f'<div class="field-value">{escape(display_value(profile.get(field), field))}</div>',
                         unsafe_allow_html=True,
                     )
 
@@ -194,7 +202,7 @@ def main() -> None:
         """
         <div class="profile-header">
             <div class="profile-title">내 취업 프로필</div>
-            <div class="profile-copy">온보딩에서 작성한 취업 목표와 선호 정보를 확인합니다.</div>
+            <div class="profile-copy">AI와 함께 완성한 취업 목표와 선호 정보를 확인해 보세요.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -203,7 +211,7 @@ def main() -> None:
     profile = load_profile()
     if profile is None:
         st.info("아직 작성된 취업 프로필이 없습니다.")
-        if st.button("프로필 작성 시작", type="primary"):
+        if st.button("프로필 완성하러가기", type="primary"):
             st.switch_page("app_pages/onboarding.py")
         return
 

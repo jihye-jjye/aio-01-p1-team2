@@ -108,6 +108,13 @@ def change_quest_status(quest: dict) -> None:
         with st.spinner("할 일 상태를 반영하고 있어요..."):
             result = update_today_quest(str(quest["id"]), next_status)
 
+        # 서버가 요청한 상태를 실제로 반영했는지 응답값으로 확인합니다.
+        if result.get("status") != next_status:
+            raise BackendAPIError(
+                "INVALID_RESPONSE",
+                "할 일 상태가 정상적으로 반영되지 않았습니다.",
+            )
+
         # exp_delta는 이번 요청으로 실제 변경된 EXP입니다.
         exp_delta = int(result.get("exp_delta") or 0)
         if exp_delta > 0:
@@ -121,6 +128,11 @@ def change_quest_status(quest: dict) -> None:
 
         st.session_state.today_quests_flash = message
         st.session_state.today_quests_loaded = False
+
+        # 로드맵 화면은 plan 응답을 세션에 보관합니다.
+        # 완료 또는 완료 취소 후 기존 값을 지워야 전체 완료 개수를 다시 조회합니다.
+        st.session_state.roadmap_plan = None
+        st.session_state.roadmap_loaded = False
         st.rerun()
     except BackendAPIError as error:
         show_error(error)
@@ -176,6 +188,25 @@ def render_empty_state(today: dict) -> None:
         st.switch_page("app_pages/roadmap.py")
 
 
+def render_profile_required() -> None:
+    """취업 프로필이 없는 사용자에게 AI 프로필 작성을 안내합니다."""
+
+    st.caption("TODAY'S CAREER QUEST")
+    st.title("오늘의 할 일")
+
+    with st.container(border=True):
+        st.subheader("취업 프로필을 먼저 만들어 주세요")
+        st.caption(
+            "AI가 목표와 경험을 알아야 나에게 맞는 로드맵과 오늘의 퀘스트를 만들 수 있어요."
+        )
+        if st.button(
+            "프로필 완성하러가기",
+            type="primary",
+            use_container_width=True,
+        ):
+            st.switch_page("app_pages/onboarding.py")
+
+
 def render_content(today: dict, flash_message: str | None = None) -> None:
     """조회 결과에 맞는 오늘 할 일 화면을 보여줍니다."""
 
@@ -214,6 +245,10 @@ def main() -> None:
             with st.spinner("오늘의 할 일을 불러오고 있어요..."):
                 load_today_quests()
         except BackendAPIError as error:
+            if error.code in {"PROFILE_NOT_FOUND", "ONBOARDING_REQUIRED"}:
+                render_profile_required()
+                return
+
             show_error(error)
             if st.button("다시 불러오기"):
                 st.session_state.today_quests_loaded = False
