@@ -145,7 +145,7 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 | 06 오늘의 할 일 | 매일 할 일 | 체크박스, 예상 시간, 완료 보상 EXP, 오늘 보상·학습 추천, 완료 즉시 진행률 갱신 |
 | 07 기업 & 공고 | 공고 탐색·분석 시작 | 추천/저장/지원 공고 탭, 공고 카드, 관심 표시, 상세 이동 |
 | 08 공고 상세 | 공고 프롬프트·승인형 반영 | 공고 요구사항·기술 스택·마감일, 일정 등록, 저장, **로드맵 변경 제안 보기/승인**으로 연결 |
-| 09 고민 상담소 | AI 비서 상담 | 고민 입력, 격려·학습 조언, 상담 유형(진로/동기/멘탈) 선택 |
+| 09 고민 상담소 | AI 취업 코치 상담 | 세션 시작, 대화형 진로·학습 조언, 공고 추천·활성 로드맵/일정 질의, 상담 종료 후 구조화 보고서 확인 |
 | 10 서류 & 면접 지원 | 자기소개서·이력서·면접 지원 | 문서 유형별 초안·피드백·수정 이력, 직무/공고와 연결 |
 | 11 AI 면접 연습 | 면접 연습 | 질문 제시, 음성/텍스트 답변, 타이머, 논리성·자신감·전달력 피드백 |
 | 12 AI 비서 설정 | 비서 설정 | 차분한/팩폭 비서 모드 선택, 말투·알림 설정, 언제든 변경 가능 |
@@ -195,12 +195,17 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 
 | Method | Endpoint | 설명 |
 |---|---|---|
-| POST | `/auth/signup` | `login_id`, `login_pw` 가입 및 access/refresh token 발급 |
+| POST | `/auth/signup` | `login_id`, `login_pw`, `user_name` 가입 및 access/refresh token 발급 |
 | POST | `/auth/login` | 로그인 및 access/refresh token 발급 |
 | GET | `/auth/me` | JWT 기준 현재 사용자 ID·역할·세션 조회 |
+| PATCH | `/auth/me` | 현재 계정의 `login_id` 또는 `user_name` 부분 수정 |
+| DELETE | `/auth/me` | 현재 계정과 사용자 소유 데이터를 영구 삭제(204) |
 | GET | `/profile` | 확정 프로필 및 준비도 평가 조회. 없으면 `404 PROFILE_NOT_FOUND` |
 | GET | `/saved-jobs` | 모든 인증 사용자가 공유하는 공고 목록 조회(최신 등록순, 빈 목록은 `[]`) |
 | GET | `/saved-jobs/recommendation` | 전체 프로필 기반 유효 공고 1건 추천; LLM 실패 시 키워드 대체, 공고가 없으면 `null` |
+| POST | `/assistant/sessions` | 확정 프로필 snapshot 기반 AI 취업 코치 상담 시작 (`request_id`) |
+| POST | `/assistant/sessions/{session_id}/messages` | 상담/공고 추천/활성 로드맵·일정 질의 (`request_id`, `expected_revision`) |
+| POST | `/assistant/sessions/{session_id}/finalize` | 구조화 상담 보고서 확정 및 원문 대화 삭제 (`request_id`, `expected_revision`) |
 | POST | `/onboarding/sessions` | `request_id`로 온보딩 세션·첫 질문 시작 |
 | POST | `/onboarding/sessions/{session_id}/messages` | `request_id` + `text` 또는 `action`으로 답변·검토 수정·재시작 처리 |
 | GET | `/onboarding/sessions/{session_id}/result` | review 단계의 서버 snapshot 조회 |
@@ -242,7 +247,9 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 
 - 이 문서의 사용자 API는 제공된 `API_SPEC.md`를 구현 기준으로 한다. 명세와 화면 기획의 API 이름이 충돌하면 API_SPEC.md의 경로·필드·상태 코드가 우선한다.
 - access token은 JWT(HS256, 기본 30분), refresh token은 서버에 SHA-256 해시만 Redis에 저장하는 7일 토큰이다. 현재 명세에는 refresh·logout 엔드포인트가 없으므로 프론트는 access token 만료 시 로그인 화면으로 이동한다.
-- 가입 ID는 `trim().casefold()` 정규화 후 4~50자의 `[a-z0-9._-]+`만 허용하고, 비밀번호는 8~128자다. 로그인 5회 연속 실패 시 15분 잠금 처리한다.
+- 가입 ID는 `trim().casefold()` 정규화 후 4~50자의 `[a-z0-9._-]+`만 허용하고, 비밀번호는 8~128자, `user_name`은 trim 후 1~50자다. 로그인 5회 연속 실패 시 15분 잠금 처리한다.
+- `PATCH /auth/me`는 `login_id`, `user_name` 중 하나 이상만 수정할 수 있으며 UUID·role·비밀번호는 변경할 수 없다. `DELETE /auth/me`는 refresh 세션을 먼저 제거한 뒤 프로필·계획/일정·AI 결과·알림·일일 달성 기록을 한 DB 트랜잭션으로 삭제한다. 공유 `saved_jobs`는 삭제하지 않으며, 성공한 클라이언트는 token·사용자 캐시를 즉시 지운다.
+- 모든 Bearer API는 서명·만료뿐 아니라 DB의 현재 계정 존재·활성 상태도 확인한다. 비활성화·탈퇴된 계정의 기존 access token은 `401 UNAUTHORIZED`로 거부한다.
 - 온보딩은 Redis에서 30분 TTL로 유지한다. `target_role`, `skills`, `experience_summary`, `target_date`, `target_company`, `preferred_environment`, `daily_notification_time`, `assistant_style`의 8개 필드를 수집한 후 review 단계에서만 확정한다.
 - 준비도 평가는 기술 준비도 30점, 경험 깊이 30점, 목표 명확성 20점, 실행 준비도 20점으로 산정하며, `0~39 beginner`, `40~74 intermediate`, `75~100 advanced`를 사용한다.
 - 계획 제안과 활성 계획은 사용자당 각각 pending 1개, active 1개만 허용한다. 승인 전 active 계획을 변경하지 않고, 승인 시 proposal/plan/schedule item을 하나의 DB 트랜잭션으로 갱신한다.
@@ -256,6 +263,10 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 - 한 날짜의 모든 task를 처음 완료하면 `+20 EXP`, 완료를 취소해 날짜 달성이 해제되면 `-20 EXP`를 반영한다. 같은 상태 재요청과 이미 달성된 날짜 내부의 다른 task 변경은 EXP를 바꾸지 않는다.
 - `GET /notices`는 로그인 사용자에게 현재 게시 중인 공지만 고정 여부·게시일·ID 순으로 반환하며, v1에서는 페이지네이션과 읽음 상태를 제공하지 않는다.
 - `GET /plans/summary`는 active·completed·expired·superseded·rejected·draft 등 모든 내 계획을 생성일 내림차순으로 반환한다. 전체 task 수·완료 수·내림 진행률과 누적 `user_exp`를 함께 제공하며, 계획이 없으면 빈 배열과 0 지표를 반환한다.
+- AI 취업 코치 상담은 온보딩과 별도 세션이다. 시작·메시지·종료 요청마다 UUID `request_id`를 사용하고, 메시지·종료 시에는 최근 성공 응답의 `revision`을 `expected_revision`으로 보낸다. 요청에 정의되지 않은 필드는 거부한다.
+- 코치 세션은 생성 시점부터 24시간 TTL이며 사용자당 활성 세션은 최대 3개다. 성공한 사용자 메시지는 최대 20개, 사용자·AI 발화 합계는 40,000자, AI 응답은 12,000자를 넘을 수 없다.
+- 코치 메시지는 일반 상담, 유효 공고 추천, 활성 로드맵/일정 조회를 지원한다. 공고 추천은 최대 1건, 일정 조회는 최대 28일 범위로 제한한다.
+- `finalize`는 검증된 구조화 상담 보고서(JSONB, 세션당 1개·128KiB 이하)를 생성하고, 사용자 원문 대화는 삭제한다. 최초 성공은 201, 같은 멱등 요청 재전송은 200으로 동일 보고서를 반환하며 종료된 세션은 Redis tombstone으로 재사용을 막는다.
 - 관리자·상담·서류·면접 API는 현재 사용자 API 명세의 범위 밖 확장 기능이다. 3일 MVP에서는 명세에 추가된 공고·오늘의 할 일·공지 API와 AI 로그 대시보드를 우선 구현하고, 나머지는 별도 OpenAPI 문서로 추가한 뒤 화면을 연결한다.
 
 ## 6. DB 설계
@@ -268,12 +279,15 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 
 | 테이블 | 핵심 필드와 제약 |
 |---|---|
-| `user_accounts` | `id` UUID PK, `role(user/admin)`, `login_id`, `password_hash`, 누적 `user_exp`, `last_login_at`, `failed_login_count`, `locked_until`, `is_active`; `lower(login_id)` 유일, 일반 가입에서 role/EXP 입력 금지 |
+| `user_accounts` | `id` UUID PK, `role(user/admin)`, `login_id`, `user_name`, `password_hash`, 누적 `user_exp`, `last_login_at`, `failed_login_count`, `locked_until`, `is_active`; `lower(login_id)` 유일, 일반 가입에서 role/EXP 입력 금지 |
 | `profiles` | `user_id` PK/FK, 목표 직무·기술 배열·경험·목표일·희망 기업·환경·알림 시각·비서 말투, 준비도 평가/버전/snapshot hash, 온보딩 완료 시각 |
 | `saved_jobs` | 모든 인증 사용자가 공유해 조회하는 공고 카탈로그. 원문/추출 결과·마감일·출처를 보관하며 사용자별 필터나 `(user_id, source_key)` 제약을 두지 않는다. |
 | `plans` | 사용자별 계획, 출처 proposal·profile hash·assessment ID·선택 공고 snapshot, 제목·기간·상태·진행률·재시작 안내 상태; 사용자당 active 1개 partial unique index |
 | `schedule_items` | `plan_id`·선택적 `saved_job_id`, milestone/task/interview 종류, 예정/완료 시각·상태·metadata; 사용자·부모 리소스 소유권을 복합 FK로 검증. 날짜별 모든 progress task 완료 여부·달성 시각·EXP를 트랜잭션으로 계산한다. |
 | `ai_results` | 온보딩 평가·계획 제안·문서/면접 결과; proposal hash, profile/선택 공고 snapshot, model/prompt 버전, request ID 및 applied plan 연결; 사용자별 pending proposal 1개 제약 |
+| `assistant_sessions` | 사용자 ID·확정 프로필 snapshot·revision·생성/만료 시각·상태·멱등성 cache key; TTL 24시간, 사용자별 활성 세션 3개 이하 |
+| `assistant_reports` | 세션당 1개 불변 구조화 상담 보고서(JSONB, 128KiB 이하), 상태 `VALIDATED` 강제, 생성 후 원문 대화 삭제 및 tombstone 기록 |
+| `assistant_tombstones` | 종료/만료 세션 식별자와 보고서 재전송 정보. 종료된 세션의 메시지 재사용·중복 보고서 생성을 차단 |
 | `ai_logs` / `ai_feedbacks` | 실제 AI 호출의 request ID·상태·latency·오류 및 사용자 평가. 비밀번호·API 키·원문 민감 프롬프트는 저장 금지 |
 
 `password_hash`는 Argon2id 해시만 저장하고 API/로그/에러 응답에서는 제외한다. Streamlit은 DB에 직접 접근하지 않으며, FastAPI의 JWT `sub`로 사용자 범위를 강제한다.
@@ -400,12 +414,14 @@ AI 기능은 사용자 화면의 장식 요소가 아니라 관리자 운영 화
 | 상황 | 처리 기준 | 사용자 안내 |
 |---|---|---|
 | 인증 실패/토큰 만료 | 401 반환 후 로그인 상태를 정리하고 로그인 화면으로 이동한다. 현재 명세에는 자동 refresh API가 없다. | “로그인이 만료되었습니다. 다시 로그인해 주세요.” |
+| 계정 수정/탈퇴 충돌 | 중복 ID는 `LOGIN_ID_ALREADY_EXISTS`, 이미 없어진 계정은 `ACCOUNT_NOT_FOUND`, 삭제 성공 시 204 후 로컬 token/cache 삭제 | “계정 정보가 변경되었거나 더 이상 사용할 수 없습니다.” |
 | 권한 없는 관리자 접근 | 403 및 감사 로그 기록 | “접근 권한이 없습니다.” |
 | 온보딩 필수 답변 누락 | 누락 필드와 재질문 반환, 확정 불가 | “목표 기간을 입력해 주세요.” |
 | 목표일이 시작일보다 이른 경우 | 400 반환, 날짜 검증 | “목표 종료일은 시작일 이후여야 합니다.” |
 | 공고 URL/텍스트 불량 | 형식 검증, 원문 재입력 요청 | “공고 내용을 확인할 수 없습니다. 텍스트를 붙여 넣어 주세요.” |
 | 선택 공고 없음/마감 | `SAVED_JOB_NOT_FOUND`(404) 또는 `SAVED_JOB_EXPIRED`(422), 계획 제안 생성 차단 | “선택한 공고를 사용할 수 없습니다. 다른 공고를 선택해 주세요.” |
 | AI 분석 실패/시간 초과 | `FAILED` 저장, 제한된 재시도·관리자 모니터링 | “분석이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.” |
+| 코치 세션 충돌/한도 | 세션 만료·동시 요청·revision 불일치·활성 세션/발화/응답 길이 한도를 코드별로 반환하고 동일 request ID 재시도만 허용 | “상담 상태가 변경되었거나 한도에 도달했습니다. 최신 내용을 확인해 주세요.” |
 | 승인 충돌(동시 변경) | 로드맵 버전 검사, 409 반환, 최신 제안 재조회 | “계획이 변경되었습니다. 최신 내용을 확인해 주세요.” |
 | 이미 결정된 제안 재승인 | 멱등 처리 또는 409, 중복 반영 금지 | “이미 처리된 제안입니다.” |
 | 종료된 로드맵 수정 | 읽기 전용 처리, 재시작으로 유도 | “종료된 계획입니다. 새 계획을 시작해 주세요.” |
@@ -460,6 +476,10 @@ AI 기능은 사용자 화면의 장식 요소가 아니라 관리자 운영 화
 - 추천 후보에서 마감 공고 제외, 최대 40건 후보 선택, Gemini 추천 결과의 DB 후보 검증, Gemini 실패 시 `keyword_fallback` 전환 검증
 - 선택 공고 기반 계획 제안의 `saved_job_id` 존재·마감일 검증, 동일 `request_id`와 공고 snapshot 재시도, 선택 공고 없는 프로필 기반 제안 흐름 검증
 - `GET /plans/summary`의 전체 상태 포함·생성일 내림차순·통합 진행률·계획 없음(0 지표) 반환 검증
+- 계정 `login_id`/`user_name` 부분 수정, 중복 ID 거절, 탈퇴 시 사용자 소유 데이터·세션 삭제 및 공유 공고 보존 검증
+- 탈퇴·비활성 계정의 기존 Bearer token 거절과 204 응답 후 클라이언트 token/cache 정리 검증
+- 코치 세션 생성·revision CAS·request_id 멱등 재전송, 24시간 TTL·활성 3개·발화 20개·대화 40,000자·응답 12,000자 제한 검증
+- 코치 종료 후 `VALIDATED` 구조화 보고서 생성, 원문 대화 삭제, 201 최초 응답·200 replay·종료 tombstone 재사용 차단 검증
 - `GET /quests/today`의 활성 계획 없음/오늘 범위 밖/오늘 task 완료 상태와 `PATCH /quests/{task_id}`의 오늘 범위 제한 검증
 - 날짜 최초 달성 시 `+20 EXP`, 달성 취소 시 `-20 EXP`, 같은 상태 재요청 시 `0 EXP` 및 누적 EXP 보존
 - 게시 중 공지만 `GET /notices`에 고정 우선·게시일 내림차순으로 노출되는지 검증
