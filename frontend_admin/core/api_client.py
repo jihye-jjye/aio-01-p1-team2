@@ -6,8 +6,8 @@ from typing import Any
 import streamlit as st
 
 # BACKEND_URL = "http://127.0.0.1:8000"
-BACKEND_USER_URL = "http://192.100.200.209:8010/api/v1" # 사용자 서버
-BACKEND_AMDIN_URL = "http://192.100.200.72:8000/api/v1" # 관리자 서버
+BACKEND_USER_URL = "https://aio-01-p1-team2-1.onrender.com/api/v1" # 사용자 서버
+BACKEND_AMDIN_URL = "https://aio-01-p1-team2.onrender.com/api/v1" # 관리자 서버
 REQUEST_TIMEOUT = 60.0
 
 class BackendAPIError(Exception):
