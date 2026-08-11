@@ -522,7 +522,7 @@ async def test_create_rejects_non_product_session_limit_override() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_releases_idle_slots_at_45_second_boundary() -> None:
+async def test_create_releases_idle_slots_at_120_second_boundary() -> None:
     redis = FakeRedis()
     store = RedisAssistantSessionStore(redis)  # type: ignore[arg-type]
 
@@ -538,7 +538,7 @@ async def test_create_releases_idle_slots_at_45_second_boundary() -> None:
             max_active_sessions=6,
         )
 
-    redis.now = CREATED_AT + timedelta(seconds=45)
+    redis.now = CREATED_AT + timedelta(seconds=120)
     replacement_session_id = UUID(int=316)
     replacement_expires_at = redis.now + timedelta(hours=24)
     result = await store.create_session(
@@ -557,7 +557,7 @@ async def test_create_releases_idle_slots_at_45_second_boundary() -> None:
 
     assert result.created is True
     active = redis.active[f"assistant:v2:{USER_ID}:active"]
-    assert active == {str(replacement_session_id): 1_786_410_090_000}
+    assert active == {str(replacement_session_id): 1_786_410_240_000}
 
 
 @pytest.mark.asyncio
@@ -582,7 +582,7 @@ async def test_create_uses_versioned_idle_index_and_ignores_legacy_absolute_scor
 
     active_key = f"assistant:v2:{USER_ID}:active"
     assert redis.active[active_key] == {
-        str(replacement_session_id): 1_786_410_045_000,
+        str(replacement_session_id): 1_786_410_120_000,
     }
     assert redis.active[legacy_active_key] == {
         str(SESSION_ID): int(EXPIRES_AT.timestamp() * 1000),
@@ -614,7 +614,7 @@ async def test_create_keeps_absolute_data_expiry_and_uses_idle_index_ttl() -> No
     active_key = f"assistant:v2:{USER_ID}:active"
     later_session_key = f"assistant:v1:{USER_ID}:{later_session_id}"
     assert redis.expire_at[later_session_key] == int(later_expires_at.timestamp() * 1000)
-    assert redis.active_expire_at[active_key] == 1_786_417_245_123
+    assert redis.active_expire_at[active_key] == 1_786_417_320_123
 
 
 @pytest.mark.asyncio
@@ -657,13 +657,13 @@ async def test_load_expires_active_session_at_exact_idle_deadline() -> None:
         max_active_sessions=6,
     )
 
-    redis.now = CREATED_AT + timedelta(seconds=44, milliseconds=999)
+    redis.now = CREATED_AT + timedelta(seconds=119, milliseconds=999)
     assert isinstance(
         await store.load(user_id=USER_ID, session_id=SESSION_ID),
         AssistantSessionState,
     )
 
-    redis.now = CREATED_AT + timedelta(seconds=45)
+    redis.now = CREATED_AT + timedelta(seconds=120)
     assert await store.load(user_id=USER_ID, session_id=SESSION_ID) is None
     assert f"assistant:v1:{USER_ID}:{SESSION_ID}" not in redis.values
     assert str(SESSION_ID) not in redis.active[f"assistant:v2:{USER_ID}:active"]
@@ -729,11 +729,11 @@ async def test_turn_admission_refreshes_idle_deadline_before_processing() -> Non
     active_key = f"assistant:v2:{USER_ID}:active"
     session_key = f"assistant:v1:{USER_ID}:{SESSION_ID}"
     assert admitted.session_id == SESSION_ID
-    assert redis.active[active_key][str(SESSION_ID)] == 1_786_410_075_000
-    assert redis.active_expire_at[active_key] == 1_786_410_075_000
+    assert redis.active[active_key][str(SESSION_ID)] == 1_786_410_150_000
+    assert redis.active_expire_at[active_key] == 1_786_410_150_000
     assert redis.expire_at[session_key] == int(EXPIRES_AT.timestamp() * 1000)
 
-    redis.now = CREATED_AT + timedelta(seconds=75)
+    redis.now = CREATED_AT + timedelta(seconds=150)
     with pytest.raises(AssistantSessionExpiredError):
         await store.admit_turn(
             user_id=USER_ID,
@@ -806,7 +806,7 @@ async def test_admitted_turn_can_commit_after_idle_deadline_without_reviving_ses
         response=message_response().model_dump(mode="json"),
     )
 
-    redis.now = CREATED_AT + timedelta(seconds=75)
+    redis.now = CREATED_AT + timedelta(seconds=150)
     committed = await store.commit_turn(
         state=next_state,
         expected_revision=0,
@@ -815,7 +815,7 @@ async def test_admitted_turn_can_commit_after_idle_deadline_without_reviving_ses
 
     active_key = f"assistant:v2:{USER_ID}:active"
     assert committed == message_request
-    assert redis.active[active_key][str(SESSION_ID)] == 1_786_410_075_000
+    assert redis.active[active_key][str(SESSION_ID)] == 1_786_410_150_000
     assert await store.load(user_id=USER_ID, session_id=SESSION_ID) is None
     assert str(SESSION_ID) not in redis.active[active_key]
 
@@ -1097,11 +1097,11 @@ async def test_idle_finalize_writes_neither_tombstone_nor_request_record() -> No
         session_revision=1,
         report_id=REPORT_ID,
         created_at=CREATED_AT,
-        finalized_at=CREATED_AT + timedelta(seconds=44),
+        finalized_at=CREATED_AT + timedelta(seconds=119),
         expires_at=EXPIRES_AT,
     )
     request = finalize_request()
-    redis.now = CREATED_AT + timedelta(seconds=45)
+    redis.now = CREATED_AT + timedelta(seconds=120)
 
     with pytest.raises(AssistantSessionExpiredError):
         await store.replace_with_tombstone(

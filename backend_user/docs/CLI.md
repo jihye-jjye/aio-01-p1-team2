@@ -191,7 +191,7 @@ task 변경은 `PATCH /api/v1/quests/{task_id}`에 `{"status":"completed"}` 또�
 
 일반 입력은 `POST /api/v1/assistant/sessions/{session_id}/messages`로 보내며, 마지막 성공 응답의 revision을 `expected_revision`으로 사용한다. 성공 응답은 revision이 정확히 1 증가하고 같은 session ID인지 확인한 뒤 표시한다. 공고와 일정의 DB 사실은 서버가 만든 `assistant_message`만 리터럴 텍스트로 표시하고 내부 `tool_results` 원문은 출력하지 않는다.
 
-활성 상담은 생성 또는 마지막 사용자 입력 접수 후 45초가 지나면 종료된다. 입력 접수 때마다 유휴 기한은 45초 뒤로 갱신되지만 응답의 24시간 절대 `expires_at`은 바뀌지 않는다. `ASSISTANT_SESSION_EXPIRED`를 받으면 현재 상담을 종료하고 새 상담을 시작하도록 안내한다. 유휴 종료만으로 보고서는 자동 생성되지 않는다.
+활성 상담은 생성 또는 마지막 사용자 입력 접수 후 120초가 지나면 종료된다. 입력 접수 때마다 유휴 기한은 120초 뒤로 갱신되지만 응답의 24시간 절대 `expires_at`은 바뀌지 않는다. `ASSISTANT_SESSION_EXPIRED`를 받으면 현재 상담을 종료하고 새 상담을 시작하도록 안내한다. 유휴 종료만으로 보고서는 자동 생성되지 않는다.
 
 | 명령 | 동작 |
 | --- | --- |

@@ -29,7 +29,7 @@ from app.coach.models import (
 )
 
 MAX_ACTIVE_SESSIONS = 6
-SESSION_IDLE_TIMEOUT_MS = 45_000
+SESSION_IDLE_TIMEOUT_MS = 120_000
 
 LOAD_SESSION_SCRIPT = """
 -- assistant-load-session

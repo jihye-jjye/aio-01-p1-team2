@@ -8,7 +8,7 @@ Gemini `gemini-3.6-flash` 자유대화 온보딩과 사용자 맞춤 취업·커
 
 로그인 직후에는 활성 계획의 KST 오늘 포함 7일 일정을 계획·날짜별로 동기화해 미확인 알림을 보여줍니다. 계획 활성화·수정·종료와 일정 추가·수정·삭제는 PostgreSQL trigger가 원본 변경과 같은 트랜잭션에서 기록하며, 조회만으로는 확인 처리하지 않습니다.
 
-완료된 프로필의 `assistant_style`을 사용하는 코치 상담은 일반 커리어 질문, 최신 DB 공고 추천, 활성 로드맵 일정 조회를 지원합니다. 대화 원문은 Redis에 생성 시점부터 최대 24시간만 보관하고, 활성 상담은 생성 또는 마지막 사용자 입력 접수 후 45초가 지나면 종료합니다. 명시적으로 상담을 종료하면 구조화 보고서만 PostgreSQL `app.ai_results`에 저장합니다.
+완료된 프로필의 `assistant_style`을 사용하는 코치 상담은 일반 커리어 질문, 최신 DB 공고 추천, 활성 로드맵 일정 조회를 지원합니다. 대화 원문은 Redis에 생성 시점부터 최대 24시간만 보관하고, 활성 상담은 생성 또는 마지막 사용자 입력 접수 후 120초가 지나면 종료합니다. 명시적으로 상담을 종료하면 구조화 보고서만 PostgreSQL `app.ai_results`에 저장합니다.
 
 ```bash
 curl -X POST https://aio-01-p1-team2-1.onrender.com/api/v1/auth/signup \
@@ -395,14 +395,14 @@ POST /api/v1/assistant/sessions
 - timeout 또는 network error 재시도에는 같은 `request_id`와 완전히 같은 payload를 사용합니다. 같은 ID를 다른 메시지나 다른 API에 재사용하면 `409 IDEMPOTENCY_KEY_REUSED`입니다.
 - `tool_results`의 공고·일정은 요청 시점 DB 사실입니다. 회사명, 직무명, 마감일, 일정 시각은 서버가 렌더링하며 Gemini 코칭과 분리됩니다.
 - `friendly`는 공감→근거→행동 제안, `direct`는 거친 반말·인터넷 말투와 가벼운 비속어를 사용한 로스트→근거→즉시 행동 순서를 사용합니다. `direct`도 준비 상태와 행동만 지적하며 차별, 외모·정체성·속성 공격, 위협, 결과 보장은 허용하지 않습니다.
-- 사용자당 활성 세션은 최대 6개, 세션당 성공한 사용자 턴은 최대 20개입니다. 활성 세션은 생성 또는 마지막 사용자 입력 접수 후 정확히 45초에 종료되며, 입력을 받을 때마다 이 유휴 기한만 갱신됩니다. 응답의 `expires_at`과 Redis 원문·멱등 데이터의 절대 보관 상한 24시간은 연장되지 않습니다.
+- 사용자당 활성 세션은 최대 6개, 세션당 성공한 사용자 턴은 최대 20개입니다. 활성 세션은 생성 또는 마지막 사용자 입력 접수 후 정확히 120초에 종료되며, 입력을 받을 때마다 이 유휴 기한만 갱신됩니다. 응답의 `expires_at`과 Redis 원문·멱등 데이터의 절대 보관 상한 24시간은 연장되지 않습니다.
 - “상담 종료”는 `finalize`를 호출합니다. “새 대화”는 현재 세션 `finalize` 성공 후 새 세션을 생성합니다. `201`과 durable replay의 `200`은 모두 종료 성공입니다.
 
 요청·응답 예시, `tool_results` union, 전체 오류 코드는 [API 명세](docs/API_SPEC.md#ai-취업-코치-상담)를 참고하세요.
 
 ### DB 반영
 
-- 이번 상담 유휴 정책 배포는 구버전 backend 인스턴스를 먼저 drain·중지한 뒤 신버전만 트래픽을 받게 전환합니다. 절대 만료 점수를 쓰던 `assistant:v1:*:active`와 45초 유휴 점수를 쓰는 `assistant:v2:*:active`를 혼합 버전에서 동시에 집계하지 않습니다.
+- 이번 상담 유휴 정책 배포는 구버전 backend 인스턴스를 먼저 drain·중지한 뒤 신버전만 트래픽을 받게 전환합니다. 절대 만료 점수를 쓰던 `assistant:v1:*:active`와 120초 유휴 점수를 쓰는 `assistant:v2:*:active`를 혼합 버전에서 동시에 집계하지 않습니다.
 - fresh bootstrap에서는 수정된 `sql/06_ai_results.sql`에 보고서 제약이 포함됩니다.
 - 기존 DB에는 migration role로 `sql/19_career_coach_report.sql`, `sql/20_private_app_schema.sql`, `sql/21_career_coach_report_forbidden_key_check.sql` 순서로 적용합니다. 공유 runtime 역할인 `app_api`로 실행하면 거부됩니다.
 - migration 19는 `career_coach_report` kind, 세션당 보고서 하나의 unique index, 완료 보고서 UPDATE 방지 trigger, 128KiB/금지 키/보고서 상태 CHECK를 추가합니다.

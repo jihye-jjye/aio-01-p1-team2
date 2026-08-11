@@ -39,7 +39,7 @@ _COMMON_ERRORS = {
     summary="AI 취업 코치 상담 시작",
     description=(
         "완료 프로필과 코치 스타일을 최대 24시간 snapshot으로 고정하며, "
-        "마지막 입력 후 45초가 지나면 활성 세션을 종료합니다."
+        "마지막 입력 후 120초가 지나면 활성 세션을 종료합니다."
     ),
     responses=_COMMON_ERRORS,
 )
