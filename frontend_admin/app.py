@@ -42,8 +42,14 @@ notice_page = st.Page(
     icon="🪧",
 )
 
+notice_detail_page = st.Page(
+    "app_pages/notice_detail.py",
+    title="공지사항 상세보기",
+    icon="🪧",
+)
+
 navigation = st.navigation(
-    [start_page, user_management_page, user_management_detail_page, notice_page, loadmap_page],
+    [start_page, user_management_page, user_management_detail_page, notice_page, loadmap_page, notice_detail_page],
     position="hidden",
 )
 

@@ -66,70 +66,35 @@ with st.container(border=True):
     for item in user_infos["items"]:
         row_cols = st.columns(column_widths)
 
-        row_cols[0].write(item["id"])
-        row_cols[1].write(item["login_id"])
-        row_cols[2].write(item["role"])
-        row_cols[3].write(item["user_exp"])
-        row_cols[4].write("활성화" if item["is_active"] else "비활성화")
-        row_cols[5].write(item["created_at"])
-        row_cols[6].write(item["last_login_at"] if item["last_login_at"] is not None else "")
+        if(item["role"] == "user"):
+            row_cols[0].write(item["id"])
+            row_cols[1].write(item["login_id"])
+            row_cols[2].write(item["role"])
+            row_cols[3].write(item["user_exp"])
+            row_cols[4].write("활성화" if item["is_active"] else "비활성화")
+            row_cols[5].write(item["created_at"])
+            row_cols[6].write(item["last_login_at"] if item["last_login_at"] is not None else "")
 
-        # 마지막 '관리' 컬럼
-        with row_cols[7]:
-            edit_col, delete_col = st.columns(2)
+            # 마지막 '관리' 컬럼
+            with row_cols[7]:
+                edit_col, delete_col = st.columns(2)
 
-            with edit_col:
-                if st.button(
-                    "수정",
-                    key=f"user-edit-{item['id']}",
-                    use_container_width=True):                    
-                    st.session_state.selected_item_login_id = item["login_id"]
-                    # 여기서 수정 페이지 또는 수정 폼을 열기
-                    st.switch_page("app_pages/user_management_detail.py")
+                with edit_col:
+                    if st.button(
+                        "수정",
+                        key=f"user-edit-{item['id']}",
+                        use_container_width=True):                    
+                        st.session_state.selected_item_login_id = item["login_id"]
+                        # 여기서 수정 페이지 또는 수정 폼을 열기
+                        st.switch_page("app_pages/user_management_detail.py")
 
-            with delete_col:
-                if st.button(
-                    "삭제",
-                    key=f"user-delete-{item['id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state.delete_item_id = item["id"]
-                    # 여기서 삭제 확인창 또는 삭제 API 호출
+                with delete_col:
+                    if st.button(
+                        "삭제",
+                        key=f"user-delete-{item['id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.delete_item_id = item["id"]
+                        # 여기서 삭제 확인창 또는 삭제 API 호출
 
-        st.divider()
-
-
-# with st.container(border=True) : 
-#     # st.subheader("", divider="rainbow")
-#     with st.spinner("사용자 정보 조회 중") :
-#         # response = httpx.get(f"{server_URL}/product/getall", timeout=5.0)
-#         response = user_infos
-#         if response is not None :
-#             # result_data = response.json()
-#             # data = result_data["data"]
-#             df = pd.DataFrame(response)
-#             select_event = st.dataframe(response, use_container_width=True, selection_mode="single-row", on_select="rerun")
-#             if select_event.selection.rows :
-#                 row_index = select_event.selection.rows[0]
-#                 selected_row = df.iloc[row_index].to_dict()
-#                 edit_col, delete_col, _ = st.columns([1, 1, 5])
-
-#                 with edit_col:
-#                     if st.button("수정", key="selected-user-edit", use_container_width=True):
-#                         st.session_state.selected_item_id = selected_row["ID"]
-#                         # 수정 화면으로 이동 또는 수정 폼 표시
-
-#                 with delete_col:
-#                     if st.button("삭제", key="selected-user-delete", use_container_width=True):
-#                         st.session_state.delete_item_id = selected_row["ID"]
-#                         # 삭제 확인 후 API 호출
-
-
-# try:
-#     selected_item_id = st.session_state.get("selected_item_id")
-#     if selected_item_id is None:
-#         show_item_list()
-#     else:
-#         show_item_detail(selected_item_id)
-# except BackendAPIError as error:
-#     st.error(str(error))
+            st.divider()
