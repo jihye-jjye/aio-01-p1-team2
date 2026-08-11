@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
+from app.auth.errors import AccountNotFoundError
 from app.auth.models import (
     AccountAuthRecord,
+    AccountSummary,
     CreatedUserIdentity,
     LoginResult,
     Role,
@@ -35,6 +37,16 @@ class AccountRepository(Protocol):
 
     async def record_successful_login(self, account_id: UUID, *, now: datetime) -> bool: ...
 
+    async def update_account(
+        self,
+        account_id: UUID,
+        *,
+        login_id: str | None,
+        user_name: str | None,
+    ) -> AccountSummary | None: ...
+
+    async def delete_account(self, account_id: UUID) -> bool: ...
+
 
 class RefreshTokenStore(Protocol):
     async def save(
@@ -45,6 +57,8 @@ class RefreshTokenStore(Protocol):
         token_hash: str,
         ttl_seconds: int,
     ) -> None: ...
+
+    async def revoke(self, *, session_id: UUID) -> None: ...
 
 
 class AuthService:
@@ -105,6 +119,27 @@ class AuthService:
             login_id=identity.login_id,
             **session.model_dump(),
         )
+
+    async def update_account(
+        self,
+        *,
+        user_id: UUID,
+        login_id: str | None,
+        user_name: str | None,
+    ) -> AccountSummary:
+        account = await self._accounts.update_account(
+            user_id,
+            login_id=login_id.strip().casefold() if login_id is not None else None,
+            user_name=user_name.strip() if user_name is not None else None,
+        )
+        if account is None:
+            raise AccountNotFoundError
+        return account
+
+    async def delete_account(self, *, user_id: UUID, session_id: UUID) -> None:
+        await self._refresh_tokens.revoke(session_id=session_id)
+        if not await self._accounts.delete_account(user_id):
+            raise AccountNotFoundError
 
     async def _issue_session(
         self,

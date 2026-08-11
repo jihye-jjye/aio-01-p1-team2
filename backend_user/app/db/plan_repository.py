@@ -942,7 +942,8 @@ class PsycopgPlanProposalRepository:
                 (task.status == "completed") != (task.completed_at is not None)
             ):
                 raise PlanDataIntegrityError()
-            if task.status != status:
+            task_status_changed = task.status != status
+            if task_status_changed:
                 if plan_row.get("status") != "active":
                     raise PlanNotActiveError()
                 update_cursor = await connection.execute(
@@ -1035,27 +1036,25 @@ class PsycopgPlanProposalRepository:
             if user_exp + exp_delta < 0:
                 raise PlanDataIntegrityError()
 
-            if exp_delta:
-                achieved_at = (
-                    max(
-                        item.completed_at
-                        for item in current_day_tasks
-                        if item.completed_at is not None
-                    )
-                    if achieved
-                    else None
+            achieved_at = (
+                max(
+                    item.completed_at for item in current_day_tasks if item.completed_at is not None
                 )
-                transition_parameters = {
-                    **parameters,
-                    "plan_day": task.plan_day,
-                    "old_achieved": achievement.achieved,
-                    "old_achieved_at": achievement.achieved_at,
-                    "old_exp_awarded": achievement.exp_awarded,
-                    "achieved": achieved,
-                    "achieved_at": achieved_at,
-                    "exp_awarded": 20 if achieved else 0,
-                    "exp_delta": exp_delta,
-                }
+                if achieved
+                else None
+            )
+            transition_parameters = {
+                **parameters,
+                "plan_day": task.plan_day,
+                "old_achieved": achievement.achieved,
+                "old_achieved_at": achievement.achieved_at,
+                "old_exp_awarded": achievement.exp_awarded,
+                "achieved": achieved,
+                "achieved_at": achieved_at,
+                "exp_awarded": 20 if achieved else 0,
+                "exp_delta": exp_delta,
+            }
+            if task_status_changed:
                 achievement_update_cursor = await connection.execute(
                     """
                     update app.daily_goal_achievements
@@ -1078,6 +1077,7 @@ class PsycopgPlanProposalRepository:
                     raise PlanDataIntegrityError()
                 achievement = self._daily_goal_achievement(updated_achievement_row)
 
+            if exp_delta:
                 account_update_cursor = await connection.execute(
                     """
                     update app.user_accounts

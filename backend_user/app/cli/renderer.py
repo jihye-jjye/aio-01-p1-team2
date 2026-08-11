@@ -119,6 +119,7 @@ class RichRenderer:
                     "8. 공지 사항\n"
                     "9. 프로필 재온보딩\n"
                     "10. 다른 계정으로 로그인\n"
+                    "11. AI 취업 코치 상담\n"
                     "0. 종료"
                 ),
                 title=Text("메인 메뉴"),
@@ -141,6 +142,7 @@ class RichRenderer:
                     "8. 공지 사항\n"
                     "9. 프로필 재온보딩\n"
                     "10. 다른 계정으로 로그인\n"
+                    "11. AI 취업 코치 상담\n"
                     "0. 종료\n"
                     "/help  도움말\n"
                     "/quit  종료"
@@ -149,6 +151,86 @@ class RichRenderer:
                 border_style="blue",
             )
         )
+
+    def assistant_message(self, response: dict[str, Any]) -> None:
+        labels: list[str] = []
+        style_value = response.get("assistant_style")
+        style = (
+            {"friendly": "친절형", "direct": "직설형"}.get(style_value)
+            if isinstance(style_value, str)
+            else None
+        )
+        intent_value = response.get("intent")
+        intent = (
+            {
+                "general": "일반 상담",
+                "job_recommendation": "공고 추천",
+                "schedule_lookup": "일정 조회",
+                "mixed": "공고·일정 조회",
+                "clarification": "추가 확인",
+                "out_of_scope": "상담 범위 안내",
+            }.get(intent_value)
+            if isinstance(intent_value, str)
+            else None
+        )
+        if style is not None:
+            labels.append(style)
+        if intent is not None:
+            labels.append(intent)
+        body = Text()
+        if labels:
+            body.append(" · ".join(labels), style="dim")
+            body.append("\n\n")
+        message = response.get("assistant_message")
+        body.append(message if isinstance(message, str) else "없음")
+        self.console.print(
+            Panel(
+                body,
+                title=Text("AI 취업 코치"),
+                border_style="magenta",
+            )
+        )
+
+    def assistant_help(self) -> None:
+        self.console.print(
+            Panel(
+                Text(
+                    "취업·커리어 질문을 입력하세요.\n"
+                    "/finish  상담 종료 및 보고서 저장\n"
+                    "/help  도움말\n"
+                    "/quit  CLI 종료"
+                ),
+                title=Text("AI 취업 코치 도움말"),
+                border_style="blue",
+            )
+        )
+
+    def assistant_report(self, response: dict[str, Any]) -> None:
+        report = response.get("report")
+        report = report if isinstance(report, Mapping) else {}
+        table = Table(title=Text("상담 보고서"), show_lines=True)
+        table.add_column(Text("항목"), style="bold cyan", no_wrap=True)
+        table.add_column(Text("내용"), overflow="fold")
+        report_id = response.get("ai_result_id")
+        summary = report.get("summary")
+        table.add_row(Text("보고서 ID"), Text(report_id if isinstance(report_id, str) else "없음"))
+        table.add_row(Text("요약"), Text(summary if isinstance(summary, str) else "없음"))
+        for field, label in (
+            ("strengths", "강점"),
+            ("improvements", "보완점"),
+            ("priority_actions", "우선 행동"),
+        ):
+            values = report.get(field)
+            items = (
+                [item for item in values if isinstance(item, str)]
+                if isinstance(values, list)
+                else []
+            )
+            rendered = "\n".join(
+                f"{number}. {_display(item)}" for number, item in enumerate(items, start=1)
+            )
+            table.add_row(Text(label), Text(rendered or "없음"))
+        self.console.print(table)
 
     def saved_jobs(self, saved_jobs: list[dict[str, Any]]) -> None:
         if not saved_jobs:
@@ -207,9 +289,7 @@ class RichRenderer:
             "keyword_fallback": "키워드 대체",
         }.get(source, _display(source))
         summary = Text()
-        summary.append(
-            f"희망 환경: {_display(recommendation.get('preferred_environment'))}\n"
-        )
+        summary.append(f"희망 환경: {_display(recommendation.get('preferred_environment'))}\n")
         summary.append(f"일치도 {_display(recommendation.get('match_score'))}점\n")
         summary.append(f"일치 단서: {matched_text}\n")
         summary.append(f"판단 방식: {source_label}\n")
@@ -233,6 +313,82 @@ class RichRenderer:
         ):
             table.add_row(Text(label), Text(_display(value)))
         self.console.print(table)
+
+    def notification_feed(self, feed: dict[str, Any]) -> None:
+        self.console.print(
+            Text(
+                f"KST {_display(feed.get('window_start'))} ~ "
+                f"{_display(feed.get('window_end'))} · "
+                f"미확인 {_display(feed.get('unread_count'))}건"
+            )
+        )
+
+        upcoming = _items(feed.get("upcoming"))
+        if upcoming:
+            table = Table(title=Text("다가오는 7일 일정"), show_lines=True)
+            table.add_column(Text("번호"), style="bold", justify="right")
+            table.add_column(Text("날짜"))
+            table.add_column(Text("계획"), overflow="fold")
+            table.add_column(Text("알림"), overflow="fold")
+            table.add_column(Text("일정"), overflow="fold")
+            for number, notification in enumerate(upcoming, start=1):
+                item = _mapping(notification)
+                payload = _mapping(item.get("payload"))
+                schedules = [_mapping(schedule) for schedule in _items(payload.get("schedules"))]
+                schedule_lines = "\n".join(
+                    " · ".join(
+                        (
+                            _display(schedule.get("kind")),
+                            _display(schedule.get("title")),
+                            _display(schedule.get("scheduled_at")),
+                            _display(schedule.get("status")),
+                        )
+                    )
+                    for schedule in schedules
+                )
+                table.add_row(
+                    Text(f"[{number}]"),
+                    Text(_display(payload.get("date"))),
+                    Text(_display(payload.get("plan_title"))),
+                    Text(f"{_display(item.get('title'))}\n{_display(item.get('message'))}"),
+                    Text(schedule_lines or "없음"),
+                )
+            self.console.print(table)
+        else:
+            self.console.print(
+                Panel(
+                    Text("표시할 미확인 알림이 없습니다."),
+                    title=Text("다가오는 7일 일정"),
+                    border_style="yellow",
+                )
+            )
+
+        changes = _items(feed.get("changes"))
+        if changes:
+            table = Table(title=Text("최근 로드맵 변경"), show_lines=True)
+            table.add_column(Text("번호"), style="bold", justify="right")
+            table.add_column(Text("발생 시각"))
+            table.add_column(Text("알림"), overflow="fold")
+            table.add_column(Text("영향"), overflow="fold")
+            offset = len(upcoming)
+            for number, notification in enumerate(changes, start=offset + 1):
+                item = _mapping(notification)
+                payload = _mapping(item.get("payload"))
+                table.add_row(
+                    Text(f"[{number}]"),
+                    Text(_display(item.get("available_at"))),
+                    Text(f"{_display(item.get('title'))}\n{_display(item.get('message'))}"),
+                    _notification_impact(item, payload),
+                )
+            self.console.print(table)
+        else:
+            self.console.print(
+                Panel(
+                    Text("표시할 미확인 알림이 없습니다."),
+                    title=Text("최근 로드맵 변경"),
+                    border_style="yellow",
+                )
+            )
 
     def notices(self, notices: list[dict[str, Any]]) -> None:
         if not notices:
@@ -275,7 +431,9 @@ class RichRenderer:
                 )
             )
             self.console.print(
-                Text(f"날짜 {_display(view.get('date'))} · 누적 EXP {_display(view.get('user_exp'))}")
+                Text(
+                    f"날짜 {_display(view.get('date'))} · 누적 EXP {_display(view.get('user_exp'))}"
+                )
             )
             return
 
@@ -344,9 +502,7 @@ class RichRenderer:
                     border_style="yellow",
                 )
             )
-            self.console.print(
-                Text(f"누적 EXP {_display(view.get('user_exp'))}")
-            )
+            self.console.print(Text(f"누적 EXP {_display(view.get('user_exp'))}"))
             return
 
         self.console.print(
@@ -693,6 +849,33 @@ Renderer = RichRenderer
 
 def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _notification_impact(item: dict[str, Any], payload: dict[str, Any]) -> Text:
+    notification_type = item.get("type")
+    if notification_type == "roadmap_changed":
+        target = {"plan": "로드맵", "schedule": "일정"}.get(
+            payload.get("target"),
+            _display(payload.get("target")),
+        )
+        change_kind = {
+            "activation": "활성화",
+            "insert": "추가",
+            "update": "수정",
+            "delete": "삭제",
+        }.get(payload.get("change_kind"), _display(payload.get("change_kind")))
+        return Text(f"{target} · {change_kind} · {_display(payload.get('affected_count'))}건")
+    if notification_type == "plan_ended":
+        ended_status = {
+            "draft": "초안 전환",
+            "rejected": "거절",
+            "completed": "완료",
+            "expired": "만료",
+            "superseded": "교체",
+            "deleted": "삭제",
+        }.get(payload.get("ended_status"), _display(payload.get("ended_status")))
+        return Text(f"{ended_status} · 진행률 {_display(payload.get('final_progress'))}%")
+    return Text("기존 알림")
 
 
 def _items(value: Any) -> list[Any]:

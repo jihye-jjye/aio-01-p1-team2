@@ -1,36 +1,30 @@
 begin;
 
-create table if not exists app.notifications (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null
-    references app.user_accounts (id) on delete cascade,
-  plan_id uuid,
-  schedule_item_id uuid,
-  type text not null,
-  dedupe_key text not null,
-  available_at timestamptz not null default now(),
-  payload jsonb not null default '{}'::jsonb,
-  claim_token uuid,
-  claimed_until timestamptz,
-  is_read boolean not null default false,
-  read_at timestamptz,
-  invalidated_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
+alter table app.notifications
+  add column if not exists is_read boolean;
 
-  constraint notifications_user_id_id_unique
-    unique (user_id, id),
-  constraint notifications_user_dedupe_key_unique
-    unique (user_id, dedupe_key),
-  constraint notifications_plan_owner_fkey
-    foreign key (user_id, plan_id)
-    references app.plans (user_id, id)
-    on delete set null (plan_id),
-  constraint notifications_schedule_item_owner_fkey
-    foreign key (user_id, schedule_item_id)
-    references app.schedule_items (user_id, id)
-    on delete set null (schedule_item_id),
-  constraint notifications_type_check
+alter table app.notifications
+  add column if not exists invalidated_at timestamptz;
+
+update app.notifications
+set is_read = (read_at is not null)
+where is_read is distinct from (read_at is not null);
+
+alter table app.notifications
+  alter column is_read set default false,
+  alter column is_read set not null;
+
+alter table app.notifications
+  drop constraint if exists notifications_read_state_check,
+  drop constraint if exists notifications_type_check,
+  drop constraint if exists notifications_reference_shape_check,
+  drop constraint if exists notifications_plan_owner_fkey,
+  drop constraint if exists notifications_schedule_item_owner_fkey;
+
+alter table app.notifications
+  add constraint notifications_read_state_check
+    check (is_read = (read_at is not null)),
+  add constraint notifications_type_check
     check (
       type in (
         'daily_tasks',
@@ -40,21 +34,7 @@ create table if not exists app.notifications (
         'roadmap_changed'
       )
     ),
-  constraint notifications_dedupe_key_not_blank_check
-    check (btrim(dedupe_key) <> ''),
-  constraint notifications_payload_object_check
-    check (jsonb_typeof(payload) = 'object'),
-  constraint notifications_claim_pair_check
-    check (
-      (claim_token is null and claimed_until is null)
-      or
-      (claim_token is not null and claimed_until is not null)
-    ),
-  constraint notifications_read_state_check
-    check (is_read = (read_at is not null)),
-  constraint notifications_read_time_check
-    check (read_at is null or read_at >= created_at),
-  constraint notifications_reference_shape_check
+  add constraint notifications_reference_shape_check
     check (
       (
         type <> 'plan_ended'
@@ -66,8 +46,15 @@ create table if not exists app.notifications (
         or schedule_item_id is not null
         or payload ? 'schedule_item_id'
       )
-    )
-);
+    ),
+  add constraint notifications_plan_owner_fkey
+    foreign key (user_id, plan_id)
+    references app.plans (user_id, id)
+    on delete set null (plan_id),
+  add constraint notifications_schedule_item_owner_fkey
+    foreign key (user_id, schedule_item_id)
+    references app.schedule_items (user_id, id)
+    on delete set null (schedule_item_id);
 
 drop index if exists app.notifications_unread_idx;
 drop index if exists app.notifications_due_claim_idx;
@@ -622,6 +609,15 @@ begin
     execute 'create trigger notifications_set_updated_at
       before update on app.notifications
       for each row execute function app.set_updated_at()';
+  end if;
+end
+$block$;
+
+
+do $block$
+begin
+  if exists (select 1 from pg_roles where rolname = 'app_runtime') then
+    grant execute on function app.sync_daily_task_notifications(uuid) to app_runtime;
   end if;
 end
 $block$;

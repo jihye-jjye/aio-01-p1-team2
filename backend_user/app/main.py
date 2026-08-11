@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -14,14 +15,16 @@ from redis.exceptions import RedisError
 from app.api.dependencies import build_token_service
 from app.api.errors import ProfileNotFoundError, UnauthorizedError
 from app.api.router import api_router
-from app.auth.errors import LoginIdAlreadyExistsError
+from app.auth.errors import AccountNotFoundError, LoginIdAlreadyExistsError
 from app.auth.passwords import PasswordService
 from app.auth.service import InvalidCredentialsError
+from app.coach.errors import AssistantDomainError
 from app.core.config import Settings
 from app.db.pool import create_pool
 from app.db.repositories import OnboardingSnapshotConflictError
 from app.gemini.client import create_genai_client
 from app.gemini.errors import GeminiError
+from app.notifications.errors import NotificationDomainError
 from app.onboarding.flow import OnboardingValidationError
 from app.onboarding.service import (
     IdempotencyKeyReusedError,
@@ -33,10 +36,14 @@ from app.onboarding.service import (
 from app.onboarding.stores import OnboardingSessionBusyError
 from app.plans.errors import PlanDomainError
 
+logger = logging.getLogger(__name__)
+
 OPENAPI_TAGS = [
     {
         "name": "auth",
-        "description": "자체 계정 가입·로그인, JWT access token과 현재 인증 사용자 조회",
+        "description": (
+            "자체 계정 가입·로그인, JWT access token, 현재 사용자 조회와 계정 수정·삭제"
+        ),
     },
     {
         "name": "onboarding",
@@ -59,12 +66,20 @@ OPENAPI_TAGS = [
         "description": "현재 게시 중인 고정·일반 공지 조회",
     },
     {
+        "name": "notifications",
+        "description": "로그인 시 활성 로드맵 일정·변경 알림 동기화, 조회와 명시적 확인",
+    },
+    {
         "name": "quests",
         "description": "KST 오늘 퀘스트 조회와 완료 상태 변경",
     },
     {
         "name": "saved-jobs",
         "description": "모든 인증 사용자가 공유하는 저장 공고 조회와 전체 프로필 기반 추천",
+    },
+    {
+        "name": "assistant",
+        "description": "24시간 원문 보관, DB 사실 조회와 구조화 보고서를 제공하는 AI 취업 코치",
     },
 ]
 
@@ -153,6 +168,17 @@ def create_app(
         return error_response(
             status_code=409,
             code="LOGIN_ID_ALREADY_EXISTS",
+            message=str(exc),
+        )
+
+    @app.exception_handler(AccountNotFoundError)
+    async def account_not_found_handler(
+        request: Request,
+        exc: AccountNotFoundError,
+    ) -> JSONResponse:
+        return error_response(
+            status_code=404,
+            code="ACCOUNT_NOT_FOUND",
             message=str(exc),
         )
 
@@ -286,6 +312,32 @@ def create_app(
             details=exc.safe_details,
         )
 
+    @app.exception_handler(AssistantDomainError)
+    async def assistant_domain_error_handler(
+        request: Request,
+        exc: AssistantDomainError,
+    ) -> JSONResponse:
+        return error_response(
+            status_code=exc.status_code,
+            code=exc.code,
+            message=str(exc),
+            retryable=exc.retryable,
+            details=exc.safe_details,
+        )
+
+    @app.exception_handler(NotificationDomainError)
+    async def notification_domain_error_handler(
+        request: Request,
+        exc: NotificationDomainError,
+    ) -> JSONResponse:
+        return error_response(
+            status_code=exc.status_code,
+            code=exc.code,
+            message=str(exc),
+            retryable=exc.retryable,
+            details=exc.safe_details,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request,
@@ -307,6 +359,30 @@ def create_app(
         )
 
     async def infrastructure_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        diagnostic = getattr(exc, "diag", None)
+        error_type = type(exc).__name__
+        sqlstate = getattr(exc, "sqlstate", None)
+        constraint_name = getattr(diagnostic, "constraint_name", None)
+        request_method = request.method
+        request_path = request.url.path
+        logger.error(
+            (
+                "Infrastructure failure error_type=%s sqlstate=%s constraint_name=%s "
+                "request_method=%s request_path=%s"
+            ),
+            error_type,
+            sqlstate,
+            constraint_name,
+            request_method,
+            request_path,
+            extra={
+                "error_type": error_type,
+                "sqlstate": sqlstate,
+                "constraint_name": constraint_name,
+                "request_method": request_method,
+                "request_path": request_path,
+            },
+        )
         return error_response(
             status_code=503,
             code="SERVICE_UNAVAILABLE",
