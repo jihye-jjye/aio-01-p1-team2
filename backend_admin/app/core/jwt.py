@@ -1,4 +1,4 @@
-"""일반 사용자와 고정 관리자 JWT의 발급 및 검증."""
+"""일반 사용자 JWT의 발급 및 검증."""
 
 from __future__ import annotations
 
@@ -84,12 +84,6 @@ def create_access_token(subject: UUID) -> tuple[str, int]:
     """일반 사용자 UUID를 갖는 JWT를 발급한다."""
 
     return _create_access_token(subject=str(subject), scope="user")
-
-
-def create_admin_access_token() -> tuple[str, int]:
-    """고정 관리자용 JWT를 발급한다."""
-
-    return _create_access_token(subject="fixed-admin", scope="admin")
 
 
 def _decode_token(token: str) -> dict:

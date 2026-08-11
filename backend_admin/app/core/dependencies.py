@@ -12,7 +12,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from postgrest.exceptions import APIError
 from pydantic import BaseModel
 
-from app.core.jwt import TokenValidationError, decode_access_token
+from app.core.jwt import (
+    TokenValidationError,
+    decode_access_token,
+)
 from app.core.supabase_config import get_supabase
 
 

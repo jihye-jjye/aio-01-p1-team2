@@ -29,6 +29,10 @@ class UserAdminStorageError(ServiceError):
     """사용자 관리 저장소 작업이 실패했다."""
 
 
+class UserDeleteForbiddenError(ServiceError):
+    """보호 대상 관리자 계정은 영구 삭제할 수 없다."""
+
+
 class NoticeNotFoundError(ServiceError):
     """공지사항이 존재하지 않는다."""
 
@@ -37,10 +41,5 @@ class NoticeStorageError(ServiceError):
     """공지사항 저장소 작업에 실패했다."""
 
 
-class AdminAuthenticationError(ServiceError):
-    """관리자 자격 증명이 올바르지 않다."""
-
-
-class AdminAuthStorageError(ServiceError):
-    """관리자 인증 설정 또는 토큰 발급을 사용할 수 없다."""
-    """공지사항 저장소 작업이 실패했다."""
+class DashboardStorageError(ServiceError):
+    """관리자 대시보드 집계 작업이 실패했다."""
