@@ -48,6 +48,19 @@ notice_detail_page = st.Page(
     icon="🪧",
 )
 
+recruitment_notice_page = st.Page(
+    "app_pages/recruitment_notice.py",
+    title="채용공고 관리",
+    icon="",
+)
+
+recruitment_notice_detail_page = st.Page(
+    "app_pages/recruitment_notice_detail.py",
+    title="채용공고 등록/편집",
+    icon="",
+)
+
+
 navigation = st.navigation(
     [start_page, user_management_page, user_management_detail_page, notice_page, loadmap_page, notice_detail_page],
     position="hidden",
