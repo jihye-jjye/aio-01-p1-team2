@@ -33,9 +33,7 @@ _TERM_ALIASES = {
     "재택": "원격",
 }
 _LLM_BATCH_SIZE = 40
-_KEYWORD_FALLBACK_REASON = (
-    "Gemini 판단을 사용할 수 없어 희망 환경 키워드 일치율로 추천했습니다."
-)
+_KEYWORD_FALLBACK_REASON = "Gemini 판단을 사용할 수 없어 희망 환경 키워드 일치율로 추천했습니다."
 
 
 class SavedJobRepositoryPort(Protocol):
@@ -79,13 +77,29 @@ class SavedJobService:
         user_id: UUID,
     ) -> SavedJobRecommendationView | None:
         profile = await self._repository.get_recommendation_profile(user_id=user_id)
+        return await self.recommend_from_snapshot(user_id=user_id, profile=profile)
+
+    async def recommend_from_snapshot(
+        self,
+        *,
+        user_id: UUID,
+        profile: ProfileOnboardingData,
+        use_llm: bool = True,
+        today: date | None = None,
+    ) -> SavedJobRecommendationView | None:
         saved_jobs = await self._repository.list_all()
-        today = self._today_provider()
+        effective_today = today or self._today_provider()
         eligible_jobs = [
-            job for job in saved_jobs if job.deadline is None or job.deadline >= today
+            job for job in saved_jobs if job.deadline is None or job.deadline >= effective_today
         ]
         if not eligible_jobs:
             return None
+
+        if not use_llm:
+            return recommend_saved_job(
+                preferred_environment=profile.preferred_environment,
+                saved_jobs=eligible_jobs,
+            )
 
         try:
             decision = await self._choose_with_batches(
@@ -168,11 +182,7 @@ def recommend_saved_job(
     for position, saved_job in enumerate(saved_jobs):
         document = _job_document(saved_job)
         matched_terms = [term for term in environment_terms if term in document]
-        score = (
-            round(len(matched_terms) * 100 / len(environment_terms))
-            if environment_terms
-            else 0
-        )
+        score = round(len(matched_terms) * 100 / len(environment_terms)) if environment_terms else 0
         ranked.append((score, matched_terms, -position, saved_job))
 
     score, matched_terms, _position, job = max(ranked, key=lambda item: (item[0], item[2]))
@@ -221,8 +231,7 @@ def _job_document(saved_job: SavedJobView) -> str:
         sort_keys=True,
     )
     document = (
-        f"{saved_job.company_name} {saved_job.job_title} "
-        f"{saved_job.posting_text} {extracted_data}"
+        f"{saved_job.company_name} {saved_job.job_title} {saved_job.posting_text} {extracted_data}"
     ).casefold()
     for alias, canonical in _TERM_ALIASES.items():
         document = document.replace(alias, canonical)

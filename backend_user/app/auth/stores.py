@@ -23,3 +23,6 @@ class RedisRefreshTokenStore:
             )
             pipeline.expire(key, ttl_seconds)
             await pipeline.execute()
+
+    async def revoke(self, *, session_id: UUID) -> None:
+        await self._redis.delete(f"auth:refresh:{session_id}")

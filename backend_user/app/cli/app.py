@@ -26,15 +26,26 @@ except ImportError:  # pragma: no cover - Windows fallback
 class ApiPort(Protocol):
     async def signup(self, login_id: str, login_pw: str, user_name: str) -> str: ...
     async def login(self, login_id: str, login_pw: str) -> None: ...
+    async def login_feed(self) -> dict[str, Any]: ...
+    async def mark_notification_read(self, notification_id: str) -> dict[str, Any]: ...
     async def profile(self) -> dict[str, Any]: ...
     async def saved_jobs(self) -> list[dict[str, Any]]: ...
     async def saved_job_recommendation(self) -> dict[str, Any] | None: ...
+    async def start_assistant_session(self) -> dict[str, Any]: ...
+    async def send_assistant_message(
+        self, session_id: str, expected_revision: int, text: str
+    ) -> dict[str, Any]: ...
+    async def finalize_assistant_session(
+        self, session_id: str, expected_revision: int
+    ) -> dict[str, Any]: ...
     async def start(self) -> dict[str, Any]: ...
     async def message(self, session_id: str, text: str) -> dict[str, Any]: ...
     async def onboarding_result(self, session_id: str) -> dict[str, Any]: ...
     async def confirm(self, session_id: str, revision: int) -> dict[str, Any]: ...
     async def restart(self, session_id: str) -> dict[str, Any]: ...
-    async def create_plan_proposal(self, request_id: str) -> dict[str, Any]: ...
+    async def create_plan_proposal(
+        self, request_id: str, saved_job_id: str | None = None
+    ) -> dict[str, Any]: ...
     async def pending_plan_proposal(
         self, start_on: str | None = None, days: int = 7
     ) -> dict[str, Any]: ...
@@ -44,6 +55,7 @@ class ApiPort(Protocol):
     async def accept_plan_proposal(self, proposal_id: str) -> dict[str, Any]: ...
     async def reject_plan_proposal(self, proposal_id: str) -> dict[str, Any]: ...
     async def active_plan(self, start_on: str | None = None, days: int = 7) -> dict[str, Any]: ...
+    async def plans_summary(self) -> dict[str, Any]: ...
     async def plan(
         self, plan_id: str, start_on: str | None = None, days: int = 7
     ) -> dict[str, Any]: ...
@@ -83,11 +95,16 @@ class RendererPort(Protocol):
     def success(self, profile: dict[str, Any]) -> None: ...
     def main_menu(self) -> None: ...
     def main_menu_help(self) -> None: ...
+    def assistant_message(self, response: dict[str, Any]) -> None: ...
+    def assistant_help(self) -> None: ...
+    def assistant_report(self, response: dict[str, Any]) -> None: ...
     def saved_jobs(self, saved_jobs: list[dict[str, Any]]) -> None: ...
     def saved_job_recommendation(self, recommendation: dict[str, Any] | None) -> None: ...
+    def notification_feed(self, feed: dict[str, Any]) -> None: ...
     def notices(self, notices: list[dict[str, Any]]) -> None: ...
     def today_quests(self, view: dict[str, Any]) -> None: ...
     def today_quest_help(self) -> None: ...
+    def plans_summary(self, view: dict[str, Any]) -> None: ...
     def proposal(self, proposal: dict[str, Any]) -> None: ...
     def proposal_help(self) -> None: ...
     def plan(self, plan: dict[str, Any], *, task_numbers: dict[str, int]) -> None: ...
@@ -179,6 +196,7 @@ class CliApp:
         self.input = input_port or TerminalInput()
         self.renderer = renderer or RichRenderer()
         self._proposal_request_id: str | None = None
+        self._selected_saved_job_id: str | None = None
 
     async def run(self) -> int:
         code = 0
@@ -228,6 +246,8 @@ class CliApp:
                 )
                 continue
             auth_mode = "login"
+
+            await self._login_notifications()
 
             try:
                 with self.renderer.status("프로필 조회 중..."):
@@ -296,6 +316,41 @@ class CliApp:
                 continue
             return menu_result
 
+    async def _login_notifications(self) -> None:
+        try:
+            with self.renderer.status("로그인 알림 동기화 중..."):
+                feed = await self.api.login_feed()
+        except ApiError:
+            self.renderer.notice("로그인 알림을 불러오지 못했습니다. 프로필 조회를 계속합니다.")
+            return
+
+        self.renderer.notification_feed(feed)
+        choices = _notification_choices(feed)
+        if not choices:
+            return
+
+        while True:
+            raw_selection = (
+                await self.input.read("확인 처리할 알림 번호 (쉼표로 구분, Enter: 건너뛰기)> ")
+            ).strip()
+            if not raw_selection:
+                return
+            selected = _selected_notification_ids(raw_selection, choices)
+            if selected is None:
+                self.renderer.notice(
+                    "표시된 알림 번호를 쉼표로 구분해 입력하거나 Enter로 건너뛰세요."
+                )
+                continue
+            break
+
+        for notification_id in selected:
+            try:
+                await self.api.mark_notification_read(notification_id)
+            except ApiError:
+                self.renderer.notice(
+                    "알림 확인 상태를 저장하지 못했습니다. 다음 알림 처리를 계속합니다."
+                )
+
     async def _main_menu(self, profile: dict[str, Any]) -> int | ReloginRequired | SwitchAccount:
         while True:
             self.renderer.main_menu()
@@ -319,26 +374,31 @@ class CliApp:
                     return result
                 continue
             if choice == "4":
+                result = await self._plans_summary_entry()
+                if isinstance(result, ReloginRequired):
+                    return result
+                continue
+            if choice == "5":
                 result = await self._today_quests_entry()
                 if isinstance(result, (int, ReloginRequired)):
                     return result
                 continue
-            if choice == "5":
+            if choice == "6":
                 result = await self._saved_jobs_entry()
                 if isinstance(result, ReloginRequired):
                     return result
                 continue
-            if choice == "6":
+            if choice == "7":
                 result = await self._recommend_saved_job_entry()
-                if isinstance(result, ReloginRequired):
+                if isinstance(result, (int, ReloginRequired)):
                     return result
                 continue
-            if choice == "7":
+            if choice == "8":
                 result = await self._notices_entry()
                 if isinstance(result, ReloginRequired):
                     return result
                 continue
-            if choice == "8":
+            if choice == "9":
                 result = await self._reonboard()
                 if isinstance(result, ProfileReady):
                     profile = result.profile
@@ -346,10 +406,137 @@ class CliApp:
                 if isinstance(result, (int, ReloginRequired)):
                     return result
                 continue
-            if choice == "9":
+            if choice == "10":
                 self._proposal_request_id = None
+                self._selected_saved_job_id = None
                 return SwitchAccount()
+            if choice == "11":
+                result = await self._assistant_entry()
+                if isinstance(result, (int, ReloginRequired)):
+                    return result
+                continue
             self.renderer.main_menu_help()
+
+    async def _assistant_entry(self) -> int | ReloginRequired | None:
+        try:
+            with self.renderer.status("AI 취업 코치 상담 시작 중..."):
+                response = await self.api.start_assistant_session()
+        except ApiError as exc:
+            self.renderer.error(_friendly_error(exc))
+            if _requires_login(exc):
+                return ReloginRequired()
+            return None
+
+        if not isinstance(response, dict):
+            self.renderer.error("상담 시작 응답을 확인할 수 없습니다. 새 상담을 시작해주세요.")
+            return None
+        session_id = response.get("session_id")
+        revision = response.get("revision")
+        if (
+            not _is_canonical_uuid(session_id)
+            or type(revision) is not int
+            or revision != 0
+            or not isinstance(response.get("assistant_message"), str)
+        ):
+            self.renderer.error("상담 시작 응답을 확인할 수 없습니다. 새 상담을 시작해주세요.")
+            return None
+
+        self.renderer.assistant_message(response)
+        self.renderer.assistant_help()
+        while True:
+            text = (await self.input.read("취업 코치> ")).strip()
+            if text == "/quit":
+                return 0
+            if text == "/help":
+                self.renderer.assistant_help()
+                continue
+            if text == "/finish":
+                if revision == 0:
+                    self.renderer.notice("상담 보고서를 저장하려면 메시지를 한 번 이상 보내주세요.")
+                    continue
+                try:
+                    with self.renderer.status("상담 보고서 저장 중..."):
+                        finalized = await self.api.finalize_assistant_session(
+                            session_id,
+                            revision,
+                        )
+                except ApiError as exc:
+                    self.renderer.error(_friendly_error(exc))
+                    if _requires_login(exc):
+                        return ReloginRequired()
+                    if exc.code in {
+                        "ASSISTANT_SESSION_EXPIRED",
+                        "ASSISTANT_ALREADY_FINALIZED",
+                        "ASSISTANT_REVISION_CONFLICT",
+                        "ASSISTANT_DATA_INTEGRITY_ERROR",
+                    }:
+                        return None
+                    continue
+                if not isinstance(finalized, dict):
+                    self.renderer.error("상담 보고서 응답을 확인할 수 없습니다.")
+                    return None
+                report = finalized.get("report")
+                if (
+                    finalized.get("session_id") != session_id
+                    or type(finalized.get("session_revision")) is not int
+                    or finalized.get("session_revision") != revision
+                    or not _is_canonical_uuid(finalized.get("ai_result_id"))
+                    or not isinstance(report, dict)
+                    or report.get("session_id") != session_id
+                    or type(report.get("session_revision")) is not int
+                    or report.get("session_revision") != revision
+                    or not isinstance(report.get("summary"), str)
+                    or any(
+                        not isinstance(report.get(field), list)
+                        or not all(isinstance(item, str) for item in report[field])
+                        for field in ("strengths", "improvements", "priority_actions")
+                    )
+                ):
+                    self.renderer.error("상담 보고서 응답을 확인할 수 없습니다.")
+                    return None
+                self.renderer.assistant_report(finalized)
+                return None
+            if not text:
+                self.renderer.error("상담 내용을 입력해주세요.")
+                continue
+            if text.startswith("/"):
+                self.renderer.assistant_help()
+                continue
+
+            try:
+                with self.renderer.status("AI 취업 코치 답변 생성 중..."):
+                    answered = await self.api.send_assistant_message(
+                        session_id,
+                        revision,
+                        text,
+                    )
+            except ApiError as exc:
+                self.renderer.error(_friendly_error(exc))
+                if _requires_login(exc):
+                    return ReloginRequired()
+                if exc.code in {
+                    "ASSISTANT_SESSION_EXPIRED",
+                    "ASSISTANT_ALREADY_FINALIZED",
+                    "ASSISTANT_REVISION_CONFLICT",
+                    "ASSISTANT_DATA_INTEGRITY_ERROR",
+                }:
+                    return None
+                continue
+
+            if not isinstance(answered, dict):
+                self.renderer.error("상담 응답을 확인할 수 없습니다. 새 상담을 시작해주세요.")
+                return None
+            next_revision = answered.get("revision")
+            if (
+                answered.get("session_id") != session_id
+                or type(next_revision) is not int
+                or next_revision != revision + 1
+                or not isinstance(answered.get("assistant_message"), str)
+            ):
+                self.renderer.error("상담 응답을 확인할 수 없습니다. 새 상담을 시작해주세요.")
+                return None
+            revision = next_revision
+            self.renderer.assistant_message(answered)
 
     async def _saved_jobs_entry(self) -> ReloginRequired | None:
         try:
@@ -373,6 +560,18 @@ class CliApp:
                 return ReloginRequired()
             return None
         self.renderer.notices(notices)
+        return None
+
+    async def _plans_summary_entry(self) -> ReloginRequired | None:
+        try:
+            with self.renderer.status("로드맵 완료율 조회 중..."):
+                view = await self.api.plans_summary()
+        except ApiError as exc:
+            self.renderer.error(_friendly_error(exc))
+            if _requires_login(exc):
+                return ReloginRequired()
+            return None
+        self.renderer.plans_summary(view if isinstance(view, dict) else {})
         return None
 
     async def _today_quests_entry(self) -> int | ReloginRequired | None:
@@ -474,7 +673,10 @@ class CliApp:
             self._proposal_request_id = request_id
             try:
                 with self.renderer.status("Gemini가 로드맵 제안을 생성하는 중..."):
-                    proposal = await self.api.create_plan_proposal(request_id)
+                    proposal = await self.api.create_plan_proposal(
+                        request_id,
+                        saved_job_id=self._selected_saved_job_id,
+                    )
             except ApiError as create_exc:
                 if not _retain_proposal_request(create_exc):
                     self._proposal_request_id = None
@@ -1018,9 +1220,9 @@ class CliApp:
                     else:
                         if _pending_matches_profile(pending, profile):
                             self.renderer.success(profile)
-                            recommendation_result = (
-                                await self._recommend_saved_job_entry()
-                            )
+                            recommendation_result = await self._recommend_saved_job_entry()
+                            if isinstance(recommendation_result, int):
+                                return recommendation_result
                             if isinstance(recommendation_result, ReloginRequired):
                                 return ReloginRequired(pending)
                             return ProfileReady(profile)
@@ -1030,6 +1232,8 @@ class CliApp:
                 elif _pending_matches_profile(pending, profile):
                     self.renderer.success(profile)
                     recommendation_result = await self._recommend_saved_job_entry()
+                    if isinstance(recommendation_result, int):
+                        return recommendation_result
                     if isinstance(recommendation_result, ReloginRequired):
                         return ReloginRequired(pending)
                     return ProfileReady(profile)
@@ -1048,7 +1252,7 @@ class CliApp:
                 continue
             self.renderer.verification_help()
 
-    async def _recommend_saved_job_entry(self) -> ReloginRequired | None:
+    async def _recommend_saved_job_entry(self) -> int | ReloginRequired | None:
         try:
             with self.renderer.status("희망 환경 맞춤 공고 추천 중..."):
                 recommendation = await self.api.saved_job_recommendation()
@@ -1058,11 +1262,52 @@ class CliApp:
                 return ReloginRequired()
             return None
         self.renderer.saved_job_recommendation(recommendation)
+        if recommendation is None:
+            return None
+        job = recommendation.get("job")
+        job_id = job.get("id") if isinstance(job, dict) else None
+        if not _is_canonical_uuid(job_id):
+            self.renderer.error("추천 공고 ID를 확인할 수 없습니다.")
+            return None
+        confirmation = await self._yes_or_no("이 추천 공고를 로드맵 대상으로 선택할까요? (y/n)")
+        if type(confirmation) is int:
+            return confirmation
+        self._proposal_request_id = None
+        self._selected_saved_job_id = job_id if confirmation else None
+        if confirmation:
+            self.renderer.notice("추천 공고를 선택했습니다. 로드맵 생성 시 이 공고를 반영합니다.")
         return None
 
 
 def _is_not_found(exc: ApiError, code: str) -> bool:
     return exc.status_code == 404 and exc.code == code
+
+
+def _notification_choices(feed: dict[str, Any]) -> dict[int, str]:
+    upcoming = feed.get("upcoming")
+    changes = feed.get("changes")
+    items = (upcoming if isinstance(upcoming, list) else []) + (
+        changes if isinstance(changes, list) else []
+    )
+    choices: dict[int, str] = {}
+    for number, item in enumerate(items, start=1):
+        notification_id = item.get("id") if isinstance(item, dict) else None
+        if _is_canonical_uuid(notification_id):
+            choices[number] = notification_id
+    return choices
+
+
+def _selected_notification_ids(
+    raw_selection: str,
+    choices: dict[int, str],
+) -> list[str] | None:
+    parts = [part.strip() for part in raw_selection.split(",")]
+    if not parts or any(not part.isdecimal() for part in parts):
+        return None
+    numbers = [int(part) for part in parts]
+    if any(number not in choices for number in numbers):
+        return None
+    return list(dict.fromkeys(choices[number] for number in numbers))
 
 
 def _retain_proposal_request(exc: ApiError) -> bool:
@@ -1332,6 +1577,16 @@ def _friendly_error(
         "GEMINI_CONFIGURATION_ERROR": "Gemini 서버 설정을 확인해주세요.",
         "GEMINI_INVALID_RESPONSE": "Gemini 응답을 검증하지 못했습니다. 다시 시도해주세요.",
         "GEMINI_CONTENT_BLOCKED": "안전 정책으로 해당 입력을 처리할 수 없습니다.",
+        "ASSISTANT_SESSION_EXPIRED": "상담 세션이 만료되었습니다. 새 상담을 시작해주세요.",
+        "ASSISTANT_SESSION_BUSY": "이전 상담 요청을 처리 중입니다. 잠시 후 다시 시도해주세요.",
+        "ASSISTANT_REVISION_CONFLICT": "상담 상태가 변경되었습니다. 새 상담을 시작해주세요.",
+        "ASSISTANT_SESSION_LIMIT_REACHED": "동시에 유지할 수 있는 상담은 최대 3개입니다.",
+        "ASSISTANT_ALREADY_FINALIZED": "이미 종료된 상담입니다.",
+        "ASSISTANT_REPORT_EMPTY": "메시지를 한 번 이상 보낸 뒤 상담을 종료해주세요.",
+        "ASSISTANT_TURN_LIMIT_REACHED": "한 상담에서는 메시지를 최대 20개까지 보낼 수 있습니다.",
+        "ASSISTANT_TRANSCRIPT_LIMIT_REACHED": "상담 대화 길이 한도에 도달했습니다.",
+        "ASSISTANT_RESPONSE_TOO_LONG": "AI 코치 응답이 너무 깁니다. 질문을 나눠서 보내주세요.",
+        "ASSISTANT_DATA_INTEGRITY_ERROR": "상담 데이터를 검증하지 못했습니다. 새 상담을 시작해주세요.",
         "PLAN_TARGET_DATE_EXPIRED": "프로필 목표일이 지나 로드맵을 생성할 수 없습니다.",
         "PLAN_HORIZON_TOO_LONG": "로드맵 기간이 너무 깁니다. 목표일을 조정해주세요.",
         "PLAN_PROPOSAL_ALREADY_PENDING": "이미 검토 대기 중인 로드맵 제안이 있습니다.",

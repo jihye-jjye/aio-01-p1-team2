@@ -1,11 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 
 from app.api.dependencies import get_auth_service, get_current_user
 from app.api.errors import APIErrorEnvelope
-from app.api.schemas import LoginRequest, SignupRequest
-from app.auth.models import CurrentUser, LoginResult, SignupResult
+from app.api.schemas import AccountUpdateRequest, LoginRequest, SignupRequest
+from app.auth.models import AccountSummary, CurrentUser, LoginResult, SignupResult
 from app.auth.service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -95,21 +95,115 @@ async def login(
     response_model=CurrentUser,
     summary="현재 인증 사용자 조회",
     description="""
-Bearer access token을 검증하고 JWT claim에 담긴 현재 사용자 정보를 반환합니다.
+Bearer access token과 계정 활성 상태를 검증하고 JWT claim에 담긴 현재 사용자 정보를 반환합니다.
 
-- PostgreSQL을 조회하지 않고 검증된 `sub`, `role`, `sid` claim을 사용합니다.
+- PostgreSQL에서 `sub` 계정이 현재 활성 상태인지 확인한 뒤 검증된 `sub`, `role`, `sid` claim을 사용합니다.
 - `id`는 사용자 UUID, `session_id`는 refresh token과 연결된 인증 세션 UUID입니다.
-- access token이 없거나 만료·위조된 경우 인증 상태를 폐기하고 다시 로그인해야 합니다.
+- access token이 없거나 만료·위조됐거나 계정이 삭제·비활성 상태이면 인증 상태를 폐기해야 합니다.
 """,
     response_description="JWT에서 검증한 현재 사용자와 인증 세션 정보",
     responses={
         401: {
             "model": APIErrorEnvelope,
-            "description": "`UNAUTHORIZED`: Bearer token 없음, 만료 또는 검증 실패",
-        }
+            "description": "`UNAUTHORIZED`: Bearer token 없음·만료·위조 또는 비활성 계정",
+        },
+        503: {
+            "model": APIErrorEnvelope,
+            "description": "`SERVICE_UNAVAILABLE`: 계정 활성 상태 확인 중 PostgreSQL 장애",
+        },
     },
 )
 async def me(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> CurrentUser:
     return current_user
+
+
+@router.patch(
+    "/me",
+    response_model=AccountSummary,
+    summary="현재 계정 로그인 ID·이름 수정",
+    description="""
+Bearer access token의 `sub`로 식별한 현재 계정의 `login_id` 또는 `user_name`을 수정합니다.
+
+- 요청 body에 사용자 UUID를 받지 않으며 다른 사용자의 계정을 수정할 수 없습니다.
+- 두 필드 중 하나 이상을 보내야 하며 명시적인 `null`과 알 수 없는 필드는 허용하지 않습니다.
+- `login_id`는 앞뒤 공백 제거와 대소문자 정규화 후 4~50자, `[a-z0-9._-]+` 형식입니다.
+- `user_name`은 앞뒤 공백 제거 후 1~50자입니다.
+- 로그인 ID 변경 뒤에도 현재 JWT의 UUID 기반 소유권과 세션은 유지됩니다.
+""",
+    response_description="수정된 현재 계정의 UUID, 로그인 ID와 사용자 이름",
+    responses={
+        401: {
+            "model": APIErrorEnvelope,
+            "description": "`UNAUTHORIZED`: Bearer token 없음·만료·위조 또는 비활성 계정",
+        },
+        404: {
+            "model": APIErrorEnvelope,
+            "description": "`ACCOUNT_NOT_FOUND`: 수정 직전에 계정이 삭제됨",
+        },
+        409: {
+            "model": APIErrorEnvelope,
+            "description": "`LOGIN_ID_ALREADY_EXISTS`: 정규화된 로그인 ID 중복",
+        },
+        422: {
+            "model": APIErrorEnvelope,
+            "description": "`VALIDATION_ERROR`: 필드 누락·null·형식·길이 또는 알 수 없는 필드",
+        },
+        503: {
+            "model": APIErrorEnvelope,
+            "description": "`SERVICE_UNAVAILABLE`: PostgreSQL 장애",
+        },
+    },
+)
+async def update_me(
+    payload: AccountUpdateRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> AccountSummary:
+    return await service.update_account(
+        user_id=current_user.id,
+        login_id=payload.login_id,
+        user_name=payload.user_name,
+    )
+
+
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="현재 계정 영구 삭제",
+    description="""
+Bearer access token의 `sub`로 식별한 현재 계정과 사용자 소유 데이터를 영구 삭제합니다.
+
+- 요청 body나 path에 사용자 UUID를 받지 않습니다.
+- 프로필, 계획, 일정, AI 결과, 알림과 목표 달성 기록을 같은 DB 트랜잭션에서 삭제합니다.
+- 모든 사용자가 공유하는 저장 공고는 삭제하지 않습니다.
+- 현재 refresh 세션을 먼저 폐기하며, 삭제 뒤 남아 있는 access token도 계정 활성 확인에서 거부됩니다.
+- 성공 응답을 받으면 클라이언트는 보관 중인 access/refresh token과 사용자 캐시를 즉시 폐기해야 합니다.
+""",
+    response_description="응답 본문 없음",
+    responses={
+        401: {
+            "model": APIErrorEnvelope,
+            "description": "`UNAUTHORIZED`: Bearer token 없음·만료·위조 또는 비활성 계정",
+        },
+        404: {
+            "model": APIErrorEnvelope,
+            "description": "`ACCOUNT_NOT_FOUND`: 삭제 직전에 계정이 이미 삭제됨",
+        },
+        503: {
+            "model": APIErrorEnvelope,
+            "description": "`SERVICE_UNAVAILABLE`: PostgreSQL 또는 Redis 장애",
+        },
+    },
+)
+async def delete_me(
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> Response:
+    await service.delete_account(
+        user_id=current_user.id,
+        session_id=current_user.session_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

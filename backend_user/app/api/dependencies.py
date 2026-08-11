@@ -17,10 +17,14 @@ from app.auth.passwords import PasswordService
 from app.auth.service import AuthService
 from app.auth.stores import RedisRefreshTokenStore
 from app.auth.tokens import InvalidAccessTokenError, TokenService
+from app.coach.repository import PsycopgCoachReportRepository, PsycopgCoachRepository
+from app.coach.service import CareerCoachService
+from app.coach.stores import RedisAssistantSessionLocks, RedisAssistantSessionStore
 from app.core.config import Settings
 from app.db.plan_repository import PsycopgPlanProposalRepository
 from app.db.repositories import PsycopgAccountRepository, PsycopgProfileRepository
 from app.gemini.adapter import GeminiOnboardingAdapter
+from app.gemini.coach_adapter import GeminiCareerCoachAdapter
 from app.gemini.errors import GeminiError
 from app.gemini.job_recommendation_adapter import GeminiSavedJobRecommendationAdapter
 from app.gemini.plan_adapter import (
@@ -33,6 +37,8 @@ from app.gemini.rate_limit import RedisGeminiRateLimiter
 from app.gemini.structured import GeminiStructuredClient
 from app.notices.repository import PsycopgNoticeRepository
 from app.notices.service import NoticeService
+from app.notifications.repository import PsycopgNotificationRepository
+from app.notifications.service import NotificationService
 from app.onboarding.service import OnboardingService
 from app.onboarding.stores import RedisOnboardingSessionLock, RedisOnboardingSessionStore
 from app.plans.errors import PlanDomainError
@@ -191,6 +197,12 @@ def get_notice_service(
     return NoticeService(PsycopgNoticeRepository(pool))
 
 
+def get_notification_service(
+    pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
+) -> NotificationService:
+    return NotificationService(PsycopgNotificationRepository(pool))
+
+
 def get_saved_job_service(
     settings: Annotated[Settings, Depends(get_settings)],
     pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
@@ -212,19 +224,55 @@ def get_saved_job_service(
     )
 
 
-def get_current_user(
+def get_assistant_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+    pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
+    redis: Annotated[Redis, Depends(get_redis)],
+    gemini_client: Annotated[Any, Depends(get_gemini_async_client)],
+) -> CareerCoachService:
+    limiter = RedisGeminiRateLimiter(redis)
+    structured = GeminiStructuredClient(
+        client=gemini_client,
+        limiter=limiter,
+        model=settings.gemini_model,
+        api_version=settings.gemini_api_version,
+        timeout_seconds=settings.gemini_timeout_seconds,
+        max_attempts=settings.gemini_max_attempts,
+    )
+    saved_jobs = SavedJobService(
+        PsycopgSavedJobRepository(pool),
+        recommender=GeminiSavedJobRecommendationAdapter(structured),
+        today_provider=lambda: datetime.now(ZoneInfo("Asia/Seoul")).date(),
+    )
+    lock_timeout = settings.gemini_timeout_seconds * settings.gemini_max_attempts * 2 + 30
+    return CareerCoachService(
+        sessions=RedisAssistantSessionStore(redis),
+        locks=RedisAssistantSessionLocks(redis, timeout_seconds=lock_timeout),
+        profiles=PsycopgProfileRepository(pool),
+        coach=GeminiCareerCoachAdapter(structured),
+        saved_jobs=saved_jobs,
+        schedules=PsycopgCoachRepository(pool),
+        reports=PsycopgCoachReportRepository(pool),
+    )
+
+
+async def get_current_user(
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
         Depends(bearer_scheme),
     ],
     tokens: Annotated[TokenService, Depends(get_token_service)],
+    pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
 ) -> CurrentUser:
     if credentials is None or credentials.scheme.casefold() != "bearer":
         raise UnauthorizedError
     try:
-        return tokens.decode_access(credentials.credentials)
+        current_user = tokens.decode_access(credentials.credentials)
     except InvalidAccessTokenError as exc:
         raise UnauthorizedError from exc
+    if not await PsycopgAccountRepository(pool).is_active(current_user.id):
+        raise UnauthorizedError
+    return current_user
 
 
 def build_token_service(settings: Settings) -> TokenService:

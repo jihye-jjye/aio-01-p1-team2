@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.profiles.models import ProfileOnboardingData
+from app.saved_jobs.models import SavedJobView
 from app.structured import StructuredOutputValidationError
 
 PROFILE_PLAN_OUTLINE_VERSION = "profile-plan-outline-v1"
@@ -32,6 +33,7 @@ class ProfilePlanGenerationContext(StrictPlanModel):
     assessment_score: int = Field(ge=0, le=100)
     assessment_level: Literal["beginner", "intermediate", "advanced"]
     assessment_summary: dict[str, Any]
+    saved_job_snapshot: SavedJobView | None = None
     generated_on: date
     target_date: date
 
@@ -87,6 +89,7 @@ class ProfilePlanProposalV1(StrictPlanModel):
     profile_snapshot: ProfileOnboardingData
     profile_hash: Hex64
     assessment_result_id: UUID
+    saved_job_snapshot: SavedJobView | None = None
     generated_on: date
     starts_on: date
     ends_on: date
@@ -119,8 +122,11 @@ class ProfilePlanProposalV1(StrictPlanModel):
         expected_total = sum(len(day.tasks) for day in self.days)
         if self.total_task_count != expected_total:
             raise ValueError("total_task_count does not match tasks")
+        hash_excludes = {"proposal_hash"}
+        if self.saved_job_snapshot is None:
+            hash_excludes.add("saved_job_snapshot")
         expected_hash = profile_plan_proposal_hash(
-            self.model_dump(mode="json", exclude={"proposal_hash"})
+            self.model_dump(mode="json", exclude=hash_excludes)
         )
         if self.proposal_hash != expected_hash:
             raise ValueError("proposal_hash does not match canonical proposal content")

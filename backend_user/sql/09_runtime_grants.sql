@@ -51,11 +51,13 @@ grant select
   on app.user_accounts
   to app_runtime;
 
-grant insert (login_id, password_hash)
+grant insert (login_id, password_hash, user_name)
   on app.user_accounts
   to app_runtime;
 
 grant update (
+  login_id,
+  user_name,
   password_hash,
   user_exp,
   last_login_at,
@@ -66,7 +68,11 @@ grant update (
   on app.user_accounts
   to app_runtime;
 
-grant select, insert, update
+grant delete
+  on app.user_accounts
+  to app_runtime;
+
+grant select, insert, update, delete
   on app.profiles
   to app_runtime;
 
@@ -74,8 +80,12 @@ grant select, insert, update, delete
   on app.saved_jobs
   to app_runtime;
 
-grant select, insert, update
+grant select, insert, update, delete
   on app.plans, app.schedule_items, app.ai_results, app.notifications
+  to app_runtime;
+
+grant execute
+  on function app.sync_daily_task_notifications(uuid)
   to app_runtime;
 
 -- Keep RLS enabled as a role boundary. Per-user ownership remains enforced by

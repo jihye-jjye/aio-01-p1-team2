@@ -86,6 +86,18 @@ class PlanProposalNotFoundError(PlanDomainError):
     default_message = "계획 제안을 찾을 수 없습니다."
 
 
+class PlanSavedJobNotFoundError(PlanDomainError):
+    status_code = 404
+    code = "SAVED_JOB_NOT_FOUND"
+    default_message = "선택한 채용 공고를 찾을 수 없습니다."
+
+
+class PlanSavedJobExpiredError(PlanDomainError):
+    status_code = 422
+    code = "SAVED_JOB_EXPIRED"
+    default_message = "선택한 채용 공고의 마감일이 지났습니다."
+
+
 class PlanProposalNotPendingError(PlanDomainError):
     status_code = 409
     code = "PLAN_PROPOSAL_NOT_PENDING"

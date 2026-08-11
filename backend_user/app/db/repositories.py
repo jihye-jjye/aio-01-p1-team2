@@ -11,7 +11,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from app.auth.errors import LoginIdAlreadyExistsError
-from app.auth.models import AccountAuthRecord, CreatedUserIdentity
+from app.auth.models import AccountAuthRecord, AccountSummary, CreatedUserIdentity
 from app.profiles.models import ProfileAssessment, ProfileOnboardingData, ProfileRecord
 
 
@@ -89,6 +89,107 @@ class PsycopgAccountRepository:
             )
             row = await cursor.fetchone()
         return AccountAuthRecord.model_validate(row) if row is not None else None
+
+    async def is_active(self, account_id: UUID) -> bool:
+        async with self._pool.connection() as connection:
+            cursor = await connection.execute(
+                """
+                select id
+                from app.user_accounts
+                where id = %(account_id)s
+                  and is_active = true
+                limit 1
+                """,
+                {"account_id": account_id},
+            )
+            return await cursor.fetchone() is not None
+
+    async def update_account(
+        self,
+        account_id: UUID,
+        *,
+        login_id: str | None,
+        user_name: str | None,
+    ) -> AccountSummary | None:
+        try:
+            async with self._pool.connection() as connection:
+                cursor = await connection.execute(
+                    """
+                    update app.user_accounts
+                    set
+                      login_id = coalesce(%(login_id)s, login_id),
+                      user_name = coalesce(%(user_name)s, user_name)
+                    where id = %(account_id)s
+                      and is_active = true
+                    returning id as user_id, login_id, user_name
+                    """,
+                    {
+                        "account_id": account_id,
+                        "login_id": login_id,
+                        "user_name": user_name,
+                    },
+                )
+                row = await cursor.fetchone()
+        except UniqueViolation as exc:
+            raise LoginIdAlreadyExistsError from exc
+        return AccountSummary.model_validate(row) if row is not None else None
+
+    async def delete_account(self, account_id: UUID) -> bool:
+        parameters = {"account_id": account_id}
+        async with self._pool.connection() as connection, connection.transaction():
+            cursor = await connection.execute(
+                """
+                select id
+                from app.user_accounts
+                where id = %(account_id)s
+                for update
+                """,
+                parameters,
+            )
+            if await cursor.fetchone() is None:
+                return False
+
+            await connection.execute(
+                "delete from app.notifications where user_id = %(account_id)s",
+                parameters,
+            )
+            await connection.execute(
+                "delete from app.schedule_items where user_id = %(account_id)s",
+                parameters,
+            )
+            await connection.execute(
+                "delete from app.daily_goal_achievements where user_id = %(account_id)s",
+                parameters,
+            )
+            await connection.execute(
+                "delete from app.profiles where user_id = %(account_id)s",
+                parameters,
+            )
+            await connection.execute(
+                """
+                update app.plans
+                set proposal_result_id = null, previous_plan_id = null
+                where user_id = %(account_id)s
+                """,
+                parameters,
+            )
+            await connection.execute(
+                "delete from app.ai_results where user_id = %(account_id)s",
+                parameters,
+            )
+            await connection.execute(
+                "delete from app.plans where user_id = %(account_id)s",
+                parameters,
+            )
+            cursor = await connection.execute(
+                """
+                delete from app.user_accounts
+                where id = %(account_id)s
+                returning id
+                """,
+                parameters,
+            )
+            return await cursor.fetchone() is not None
 
     async def record_failed_login(self, account_id: UUID, *, now: datetime) -> None:
         async with self._pool.connection() as connection:

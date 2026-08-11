@@ -9,7 +9,14 @@ from app.api.errors import APIErrorEnvelope
 from app.api.schemas import PlanTaskStatusRequest
 from app.auth.models import CurrentUser
 from app.plans.service import PlanManagementService
-from app.plans.views import PlanView, TaskUpdateView, build_plan_view, build_task_update_view
+from app.plans.views import (
+    PlanSummaryView,
+    PlanView,
+    TaskUpdateView,
+    build_plan_summary_view,
+    build_plan_view,
+    build_task_update_view,
+)
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
@@ -109,6 +116,45 @@ async def get_active_plan(
 ) -> PlanView:
     plan = await service.get_active(user_id=current_user.id)
     return build_plan_view(plan, start_on=start_on, days=days, today=service.today())
+
+
+SUMMARY_ERROR_RESPONSES = {
+    401: {"model": APIErrorEnvelope, "description": "`UNAUTHORIZED`: 인증 실패"},
+    500: {
+        "model": APIErrorEnvelope,
+        "description": "`PLAN_DATA_INTEGRITY_ERROR`: 저장된 plan·schedule 무결성 검증 실패",
+    },
+    503: {
+        "model": APIErrorEnvelope,
+        "description": "`SERVICE_UNAVAILABLE`: PostgreSQL 장애",
+    },
+}
+
+
+@router.get(
+    "/summary",
+    response_model=PlanSummaryView,
+    summary="사용자 로드맵 완료율 요약",
+    description="""
+현재 사용자가 소유한 모든 plan의 완료율과 계정 통합 완료율을 반환합니다.
+
+- `active`, `completed`, `expired`, `superseded`, `rejected`, `draft` 상태를 모두 포함합니다.
+- `percent`는 `completed_task_count * 100 // total_task_count` 정수 백분율이며
+  `total_task_count = 0`이면 `0`입니다.
+- `aggregate_percent`는 모든 plan의 task 수를 합산한 뒤 같은 방식으로 계산합니다.
+- plan은 `created_at` 내림차순(같으면 `id` 내림차순)으로 정렬합니다.
+- plan이 하나도 없으면 `plans`는 빈 배열이고 집계 필드는 모두 `0`입니다.
+- 사용자 ID는 Bearer access token에서만 결정하며 본인 plan만 반환합니다.
+""",
+    response_description="로드맵별 완료율과 계정 통합 완료율",
+    responses=SUMMARY_ERROR_RESPONSES,
+)
+async def get_plans_summary(
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    service: Annotated[PlanManagementService, Depends(get_plan_management_service)],
+) -> PlanSummaryView:
+    snapshot = await service.get_plans_summary(user_id=current_user.id)
+    return build_plan_summary_view(snapshot)
 
 
 @router.get(

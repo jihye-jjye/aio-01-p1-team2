@@ -8,6 +8,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from app.plans.models import Hex64, ProfilePlanProposalV1, StrictPlanModel
 from app.profiles.models import ProfileOnboardingData
+from app.saved_jobs.models import SavedJobView
 
 
 class StoredPlanProposal(StrictPlanModel):
@@ -16,6 +17,7 @@ class StoredPlanProposal(StrictPlanModel):
     id: UUID
     user_id: UUID
     request_id: UUID
+    saved_job_id: UUID | None = None
     decision_status: Literal["pending", "applied", "rejected"]
     content: ProfilePlanProposalV1
     model_name: str
@@ -26,6 +28,13 @@ class StoredPlanProposal(StrictPlanModel):
 
     @model_validator(mode="after")
     def validate_storage_metadata(self) -> StoredPlanProposal:
+        snapshot_id = (
+            self.content.saved_job_snapshot.id
+            if self.content.saved_job_snapshot is not None
+            else None
+        )
+        if self.saved_job_id != snapshot_id:
+            raise ValueError("stored saved_job_id does not match proposal snapshot")
         if self.model_name != self.content.engine.model:
             raise ValueError("stored model_name does not match proposal engine")
         if self.decision_status == "pending" and (
@@ -50,6 +59,7 @@ class PlanGenerationPreflight(StrictPlanModel):
     assessment_score: int = Field(ge=0, le=100)
     assessment_level: Literal["beginner", "intermediate", "advanced"]
     assessment_summary: dict[str, Any]
+    saved_job_snapshot: SavedJobView | None = None
     active_plan_exists: bool = False
     pending_request_id: UUID | None = None
 
@@ -130,4 +140,9 @@ class TodayQuestSnapshot(StrictPlanModel):
     plan_title: str | None
     tasks: list[PlanScheduleItem]
     achievement: DailyGoalAchievement | None
+    user_exp: int = Field(ge=0)
+
+
+class PlanSummarySnapshot(StrictPlanModel):
+    plans: list[StoredPlan]
     user_exp: int = Field(ge=0)

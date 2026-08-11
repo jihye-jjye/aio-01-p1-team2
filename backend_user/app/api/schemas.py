@@ -1,7 +1,8 @@
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 
 class LoginRequest(BaseModel):
@@ -25,6 +26,37 @@ class SignupRequest(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
+class AccountUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    login_id: (
+        Annotated[
+            str,
+            Field(min_length=4, max_length=50, pattern=r"^[a-z0-9._-]+$"),
+        ]
+        | SkipJsonSchema[None]
+    ) = None
+    user_name: Annotated[str, Field(min_length=1, max_length=50)] | SkipJsonSchema[None] = None
+
+    @field_validator("login_id", mode="before")
+    @classmethod
+    def normalize_login_id(cls, value: object) -> object:
+        return value.strip().casefold() if isinstance(value, str) else value
+
+    @field_validator("user_name", mode="before")
+    @classmethod
+    def normalize_user_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def require_non_null_update(self) -> "AccountUpdateRequest":
+        if not self.model_fields_set:
+            raise ValueError("login_id와 user_name 중 하나 이상이 필요합니다.")
+        if any(getattr(self, field_name) is None for field_name in self.model_fields_set):
+            raise ValueError("수정할 필드는 null일 수 없습니다.")
+        return self
+
+
 class OnboardingStartRequest(BaseModel):
     request_id: UUID
 
@@ -38,6 +70,7 @@ class OnboardingConfirmRequest(BaseModel):
 
 class PlanProposalCreateRequest(BaseModel):
     request_id: UUID
+    saved_job_id: UUID | None = None
 
 
 class PlanTaskStatusRequest(BaseModel):

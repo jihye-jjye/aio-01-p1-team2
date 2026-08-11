@@ -23,6 +23,12 @@ class CreatedUserIdentity(BaseModel):
     login_id: str
 
 
+class AccountSummary(BaseModel):
+    user_id: UUID
+    login_id: str
+    user_name: str
+
+
 class LoginResult(BaseModel):
     access_token: str
     refresh_token: str

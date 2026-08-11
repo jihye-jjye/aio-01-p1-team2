@@ -4,6 +4,7 @@ create table if not exists app.user_accounts (
   id uuid primary key default gen_random_uuid(),
   role text not null default 'user',
   login_id text not null,
+  user_name text not null default '',
   password_hash text not null,
   user_exp integer not null default 0,
   last_login_at timestamptz,

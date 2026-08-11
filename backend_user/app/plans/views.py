@@ -12,11 +12,13 @@ from app.plans.models import StrictPlanModel
 from app.plans.records import (
     DailyGoalAchievement,
     PlanScheduleItem,
+    PlanSummarySnapshot,
     StoredPlan,
     StoredPlanProposal,
     StoredTaskUpdate,
     TodayQuestSnapshot,
 )
+from app.saved_jobs.models import SavedJobView
 
 
 class PlanProposalMilestoneView(StrictPlanModel):
@@ -63,6 +65,7 @@ class PlanProposalView(StrictPlanModel):
     proposal_hash: str
     profile_hash: str
     assessment_result_id: UUID
+    saved_job: SavedJobView | None = None
     schema_version: Literal["profile-plan-proposal-v1"]
     model_name: str
     prompt_version: Literal["profile-plan-proposal-v1"]
@@ -121,6 +124,7 @@ def build_plan_proposal_view(
         proposal_hash=proposal.proposal_hash,
         profile_hash=proposal.profile_hash,
         assessment_result_id=proposal.assessment_result_id,
+        saved_job=proposal.saved_job_snapshot,
         schema_version=proposal.schema_version,
         model_name=stored.model_name,
         prompt_version=stored.prompt_version,
@@ -238,6 +242,82 @@ class TodayQuestView(StrictPlanModel):
     achieved: bool
     earned_exp: Literal[0, 20]
     user_exp: int
+
+
+class PlanSummaryItemView(StrictPlanModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    title: str
+    status: Literal["draft", "active", "completed", "expired", "superseded", "rejected"]
+    starts_on: date
+    ends_on: date
+    duration_days: int
+    total_task_count: int
+    completed_task_count: int
+    percent: int
+    activated_at: datetime | None
+    ended_at: datetime | None
+
+
+class PlanSummaryView(StrictPlanModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_exp: int
+    plan_count: int
+    aggregate_total_task_count: int
+    aggregate_completed_task_count: int
+    aggregate_percent: int
+    plans: list[PlanSummaryItemView]
+
+
+def _summary_counts(plan: StoredPlan) -> tuple[int, int]:
+    progress = [
+        item
+        for item in plan.schedule_items
+        if item.kind == "task" and item.counts_toward_progress
+    ]
+    total = plan.total_task_count
+    completed = sum(item.status == "completed" for item in progress)
+    if total < 0 or len(progress) != total or not 0 <= completed <= total:
+        raise PlanDataIntegrityError()
+    return completed, total
+
+
+def build_plan_summary_view(snapshot: PlanSummarySnapshot) -> PlanSummaryView:
+    items: list[PlanSummaryItemView] = []
+    aggregate_total = 0
+    aggregate_completed = 0
+    for plan in snapshot.plans:
+        completed, total = _summary_counts(plan)
+        aggregate_total += total
+        aggregate_completed += completed
+        items.append(
+            PlanSummaryItemView(
+                id=plan.id,
+                title=plan.title,
+                status=plan.status,
+                starts_on=plan.starts_on,
+                ends_on=plan.ends_on,
+                duration_days=(plan.ends_on - plan.starts_on).days + 1,
+                total_task_count=total,
+                completed_task_count=completed,
+                percent=(completed * 100 // total) if total > 0 else 0,
+                activated_at=plan.activated_at,
+                ended_at=plan.ended_at,
+            )
+        )
+    aggregate_percent = (
+        aggregate_completed * 100 // aggregate_total if aggregate_total > 0 else 0
+    )
+    return PlanSummaryView(
+        user_exp=snapshot.user_exp,
+        plan_count=len(items),
+        aggregate_total_task_count=aggregate_total,
+        aggregate_completed_task_count=aggregate_completed,
+        aggregate_percent=aggregate_percent,
+        plans=items,
+    )
 
 
 def _matches_frozen_schedule(
