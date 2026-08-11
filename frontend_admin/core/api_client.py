@@ -5,9 +5,9 @@ import httpx
 from typing import Any
 
 # BACKEND_URL = "http://127.0.0.1:8000"
-# BACKEND_URL = "http://192.100.200.209:8010/api/v1" # 사용자 서버
-BACKEND_URL = "http://192.100.200.72:8000/api/v1"
-REQUEST_TIMEOUT = 15.0
+BACKEND_USER_URL = "http://192.100.200.209:8010/api/v1" # 사용자 서버
+BACKEND_AMDIN_URL = "http://192.100.200.72:8000/api/v1" # 관리자 서버
+REQUEST_TIMEOUT = 60.0
 
 class BackendAPIError(Exception):
     """백엔드 연결 또는 API 응답 처리 중 발생한 오류입니다."""
@@ -18,10 +18,14 @@ def request(method: str,
             # data, files 는 multipart/form-data를 사용할 때 쓴다..
             data: dict[str, Any] | None = None, # ex. name, price, desc를 가지고 있는것이고            
             files: dict[str, Any] | None = None, # ex. image 파일,
-            params: dict[str, Any] | None = None
+            params: dict[str, Any] | None = None,
+            role : str | None = None
             ):
     try:
-        
+        if role =="ADMIN":
+            BACKEND_URL = BACKEND_AMDIN_URL
+        else :
+            BACKEND_URL = BACKEND_USER_URL
         response = httpx.request(
             method,
             f"{BACKEND_URL}{path}",

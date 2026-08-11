@@ -13,40 +13,47 @@ init_state()
 
 start_page = st.Page(
     "app_pages/start.py",
+    title="대쉬",
     icon="🏠",
     default=True,
 )
 
-dash_home_page = st.Page(
+user_management_page = st.Page(
     "app_pages/user_management.py",
-    title="대시",
+    title="사용자 관리",
     icon="🗃️",
 )
 
-select_page = st.Page(
-    "app_pages/example.py",
-    title="조회",
-    icon="🔍",
+user_management_detail_page = st.Page(
+    "app_pages/user_management_detail.py",
+    title="사용자 관리 상세보기",
+    icon="🗃️",
 )
 
-chatbot_page = st.Page(
-    "app_pages/chat_example.py",
-    title="Chat",
-    icon="🤖",
+loadmap_page = st.Page(
+    "app_pages/loadmap.py",
+    title="로드맵 관리",
+    icon="🧭",
+)
+
+notice_page = st.Page(
+    "app_pages/notice.py",
+    title="공지사항",
+    icon="🪧",
 )
 
 navigation = st.navigation(
-    [start_page, dash_home_page, select_page, chatbot_page],
+    [start_page, user_management_page, user_management_detail_page, notice_page, loadmap_page],
     position="hidden",
 )
 
 with st.sidebar:
-    st.title("취업관리 MAP")       
-
+    st.title("취업관리 MAP")   
+    
     if is_logged_in():        
-        st.page_link(dash_home_page)
-        st.page_link(select_page)
-        st.page_link(chatbot_page)
+        st.page_link(user_management_page)
+        st.page_link(loadmap_page)
+        st.page_link(notice_page)
         if st.button("로그아웃") :
             logout()
             st.switch_page(start_page)

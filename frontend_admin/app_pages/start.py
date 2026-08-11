@@ -6,15 +6,16 @@ from core.auth import login
 st.subheader("관리자 로그인")
 
 with st.form("signup_form"):
-    admin_id = st.text_input("아이디", value="admin")
-    password = st.text_input("패스워드", type="password", value="admin123")
-    login_autho = st.checkbox("로그인 상태 유지")
+    admin_id = st.text_input("아이디", value="admin001")
+    password = st.text_input("패스워드", type="password", value="Admin!2026Test")
+    # login_autho = st.checkbox("로그인 상태 유지")
     submitted = st.form_submit_button("로그인", use_container_width=True, type="primary", )
 
     if submitted:
         if admin_id and password:
             response = login(admin_id, password)
-            if response and response["access_token"] is not None:
-                st.switch_page("app_pages/home.py")
+            print(response)
+            # if response and response["access_token"] is not None:
+            st.switch_page("app_pages/user_management.py")
         else:
             st.warning("모든 항목을 입력해 주세요.")
