@@ -39,6 +39,7 @@ try:
                         key=f"user-edit-{item['id']}",
                         use_container_width=True):                    
                         st.session_state.selected_item_notice_id = item["id"]
+                        st.session_state["recruitment_notice_detail"] = item
                         # 여기서 수정 페이지 또는 수정 폼을 열기
                         st.switch_page("app_pages/recruitment_notice_detail.py")
 
