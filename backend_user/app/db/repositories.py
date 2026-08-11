@@ -90,6 +90,21 @@ class PsycopgAccountRepository:
             row = await cursor.fetchone()
         return AccountAuthRecord.model_validate(row) if row is not None else None
 
+    async def get_account(self, account_id: UUID) -> AccountSummary | None:
+        async with self._pool.connection() as connection:
+            cursor = await connection.execute(
+                """
+                select id as user_id, login_id, coalesce(user_name, '') as user_name
+                from app.user_accounts
+                where id = %(account_id)s
+                  and is_active = true
+                limit 1
+                """,
+                {"account_id": account_id},
+            )
+            row = await cursor.fetchone()
+        return AccountSummary.model_validate(row) if row is not None else None
+
     async def is_active(self, account_id: UUID) -> bool:
         async with self._pool.connection() as connection:
             cursor = await connection.execute(

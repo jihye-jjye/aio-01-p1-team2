@@ -276,15 +276,17 @@ Access token 클레임:
 
 ### GET /auth/me
 
-토큰에 담긴 현재 사용자 정보를 반환한다. JWT를 검증한 뒤 DB에서 해당 UUID의 계정이 현재 활성 상태인지 확인하며, 응답 값 자체는 검증된 JWT claim이다.
+JWT를 검증한 뒤 DB에서 해당 UUID의 활성 계정을 조회해 현재 사용자와 계정 정보를 반환한다. `role`과 `session_id`는 검증된 JWT claim을 사용하고, `login_id`와 `user_name`은 변경 사항이 즉시 반영되도록 DB 값을 사용한다.
 
-**응답 `200 OK`** — `CurrentUser`
+**응답 `200 OK`** — `CurrentAccount`
 
 ```json
 {
   "id": "7f2ab98a-631b-4e23-9a66-88f368acf896",
   "role": "user",
-  "session_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+  "session_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "login_id": "demo.user",
+  "user_name": "홍길동"
 }
 ```
 
@@ -293,7 +295,7 @@ Access token 클레임:
 | 상태 | code | 발생 조건 |
 | --- | --- | --- |
 | 401 | `UNAUTHORIZED` | 헤더 없음, Bearer 스킴 아님, 토큰 만료·위조, 계정 삭제·비활성 |
-| 503 | `SERVICE_UNAVAILABLE` | 계정 활성 상태 확인 중 DB 장애 (retryable) |
+| 503 | `SERVICE_UNAVAILABLE` | 계정 조회 중 DB 장애 (retryable) |
 
 ---
 

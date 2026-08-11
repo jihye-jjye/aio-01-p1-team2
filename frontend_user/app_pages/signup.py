@@ -164,8 +164,8 @@ def handle_signup(
         )
         save_auth_tokens(signup_result)
 
-        # 회원가입 화면에서 받은 이름은 GET /auth/me가 이름을 제공하기 전까지
-        # 대시보드 인사말에 사용할 수 있도록 인증 세션에 함께 저장합니다.
+        # 회원가입 화면에서 받은 계정 정보는 추가 조회 없이 대시보드에서
+        # 바로 사용할 수 있도록 인증 세션에 함께 저장합니다.
         st.session_state.user = {
             "id": str(signup_result.get("user_id") or ""),
             "login_id": str(signup_result.get("login_id") or login_id),
