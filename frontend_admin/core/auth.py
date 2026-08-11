@@ -1,6 +1,7 @@
 import streamlit as st
 from clients.user_client import login_process
 from core.api_client import BackendAPIError
+from streamlit_session_browser_storage import SessionStorage
 
 def init_state():
     if "access_token" not in st.session_state:
@@ -26,3 +27,4 @@ def logout() -> None:
 
 def is_logged_in() -> bool:
     return bool(st.session_state.access_token)
+

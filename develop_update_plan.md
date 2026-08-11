@@ -199,19 +199,25 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 | POST | `/auth/login` | 로그인 및 access/refresh token 발급 |
 | GET | `/auth/me` | JWT 기준 현재 사용자 ID·역할·세션 조회 |
 | GET | `/profile` | 확정 프로필 및 준비도 평가 조회. 없으면 `404 PROFILE_NOT_FOUND` |
+| GET | `/saved-jobs` | 모든 인증 사용자가 공유하는 공고 목록 조회(최신 등록순, 빈 목록은 `[]`) |
+| GET | `/saved-jobs/recommendation` | 전체 프로필 기반 유효 공고 1건 추천; LLM 실패 시 키워드 대체, 공고가 없으면 `null` |
 | POST | `/onboarding/sessions` | `request_id`로 온보딩 세션·첫 질문 시작 |
 | POST | `/onboarding/sessions/{session_id}/messages` | `request_id` + `text` 또는 `action`으로 답변·검토 수정·재시작 처리 |
 | GET | `/onboarding/sessions/{session_id}/result` | review 단계의 서버 snapshot 조회 |
 | POST | `/onboarding/sessions/{session_id}/confirm` | `request_id`, `expected_revision`으로 검토 결과 확정 |
-| POST | `/plan-proposals` | 확정 프로필 기반 계획 제안 생성 (`request_id`) |
+| POST | `/plan-proposals` | 확정 프로필 또는 선택 공고(`saved_job_id`) 기반 계획 제안 생성 (`request_id`) |
 | GET | `/plan-proposals/pending` | 대기 중 제안 조회 |
 | GET | `/plan-proposals/{proposal_id}` | 제안 상세/일자 창 조회 |
 | POST | `/plan-proposals/{proposal_id}/accept` | 제안 승인, 단일 트랜잭션으로 active 계획·일정 생성 |
 | POST | `/plan-proposals/{proposal_id}/reject` | 제안 거절 및 이력 보존 |
 | GET | `/plans/active` | 현재 활성 계획/마일스톤/일일 task 조회 |
+| GET | `/plans/summary` | 모든 계획·통합 진행률·누적 EXP 요약 조회 |
 | GET | `/plans/{plan_id}` | 활성·종료·보관 계획 조회 |
 | PATCH | `/plans/{plan_id}/tasks/{task_id}` | `pending`/`completed` 전환 및 진행률 반환 |
+| GET | `/quests/today` | KST 오늘 기준 활성 계획의 할 일·일일 달성·EXP 조회 |
+| PATCH | `/quests/{task_id}` | 오늘의 할 일만 `pending`/`completed` 전환 |
 | POST | `/plans/{plan_id}/complete` | 전체 task 완료 시 계획 종료·재시작 안내 상태 생성 |
+| GET | `/notices` | 현재 게시 중인 공지 목록 조회(고정·게시일 순) |
 
 ### 5.3 관리자 API
 
@@ -242,7 +248,15 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 - 계획 제안과 활성 계획은 사용자당 각각 pending 1개, active 1개만 허용한다. 승인 전 active 계획을 변경하지 않고, 승인 시 proposal/plan/schedule item을 하나의 DB 트랜잭션으로 갱신한다.
 - 계획 진행률은 `completed_task_count * 100 // total_task_count`(내림)으로 백엔드에서 계산한다. task가 없는 경우 0으로 처리하며 프론트에서 직접 수정할 수 없다.
 - `GET /plans/*`와 제안 조회는 1~28일의 날짜 창만 반환한다. 원본 Gemini 응답, 자격 증명, 원문 프롬프트, Redis checkpoint는 API 응답에 포함하지 않는다.
-- 관리자·공고·퀘스트·상담·서류·면접 API는 현재 사용자 API 명세의 범위 밖 확장 기능이다. 3일 MVP에서는 사용자 API와 AI 로그 대시보드를 먼저 구현하고, 확장 API는 별도 OpenAPI 문서로 추가한 뒤 화면을 연결한다.
+- `GET /saved-jobs`는 특정 사용자의 저장 목록이 아니라 모든 인증 사용자가 공통으로 조회하는 공고 카탈로그다. 최신 등록순으로 반환하며 v1에서는 pagination·공고 상세 API를 제공하지 않는다.
+- `GET /saved-jobs/recommendation`은 목표 직무·기술·경험·목표일·희망 기업·희망 환경·알림 시각·비서 말투를 포함한 확정 프로필과 공고를 비교한다. 마감일이 지났거나 존재하지 않는 공고는 제외하고, 최신 공고 우선 최대 40건을 Gemini 후보로 전달한다.
+- 추천 응답에는 `match_score(0~100)`, `matched_terms`, `reason`, `recommendation_source(llm|keyword_fallback)`, DB에서 다시 확인한 공고 데이터를 포함한다. Gemini 시간 초과·제한·공급자 오류·형식 검증 실패 시 희망 환경 키워드 방식으로 대체하며, 이 내부 오류를 사용자에게 노출하지 않는다.
+- `POST /plan-proposals`는 선택 사항 `saved_job_id`를 받을 수 있다. 전달 시 해당 공고가 존재하고 마감되지 않았는지 검증한 뒤 공고 snapshot을 계획 생성의 입력·checkpoint·멱등성 범위에 고정한다. 없으면 기존 프로필 기반 생성 흐름을 사용한다.
+- `GET /quests/today`와 `PATCH /quests/{task_id}`가 오늘의 할 일 화면의 실제 API다. 오늘(KST)·활성 계획 범위 밖의 task는 `TODAY_QUEST_NOT_FOUND`로 처리한다.
+- 한 날짜의 모든 task를 처음 완료하면 `+20 EXP`, 완료를 취소해 날짜 달성이 해제되면 `-20 EXP`를 반영한다. 같은 상태 재요청과 이미 달성된 날짜 내부의 다른 task 변경은 EXP를 바꾸지 않는다.
+- `GET /notices`는 로그인 사용자에게 현재 게시 중인 공지만 고정 여부·게시일·ID 순으로 반환하며, v1에서는 페이지네이션과 읽음 상태를 제공하지 않는다.
+- `GET /plans/summary`는 active·completed·expired·superseded·rejected·draft 등 모든 내 계획을 생성일 내림차순으로 반환한다. 전체 task 수·완료 수·내림 진행률과 누적 `user_exp`를 함께 제공하며, 계획이 없으면 빈 배열과 0 지표를 반환한다.
+- 관리자·상담·서류·면접 API는 현재 사용자 API 명세의 범위 밖 확장 기능이다. 3일 MVP에서는 명세에 추가된 공고·오늘의 할 일·공지 API와 AI 로그 대시보드를 우선 구현하고, 나머지는 별도 OpenAPI 문서로 추가한 뒤 화면을 연결한다.
 
 ## 6. DB 설계
 
@@ -254,12 +268,12 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 
 | 테이블 | 핵심 필드와 제약 |
 |---|---|
-| `user_accounts` | `id` UUID PK, `role(user/admin)`, `login_id`, `password_hash`, `user_exp`, `last_login_at`, `failed_login_count`, `locked_until`, `is_active`; `lower(login_id)` 유일, 일반 가입에서 role/EXP 입력 금지 |
+| `user_accounts` | `id` UUID PK, `role(user/admin)`, `login_id`, `password_hash`, 누적 `user_exp`, `last_login_at`, `failed_login_count`, `locked_until`, `is_active`; `lower(login_id)` 유일, 일반 가입에서 role/EXP 입력 금지 |
 | `profiles` | `user_id` PK/FK, 목표 직무·기술 배열·경험·목표일·희망 기업·환경·알림 시각·비서 말투, 준비도 평가/버전/snapshot hash, 온보딩 완료 시각 |
-| `saved_jobs` | 사용자 저장 공고, 원문/추출 결과·마감일·출처; `(user_id, source_key)` 유일 |
-| `plans` | 사용자별 계획, 출처 proposal·profile hash·assessment ID, 제목·기간·상태·진행률·재시작 안내 상태; 사용자당 active 1개 partial unique index |
-| `schedule_items` | `plan_id`·선택적 `saved_job_id`, milestone/task/interview 종류, 예정/완료 시각·상태·metadata; 사용자·부모 리소스 소유권을 복합 FK로 검증 |
-| `ai_results` | 온보딩 평가·계획 제안·문서/면접 결과; proposal hash, model/prompt 버전, request ID 및 applied plan 연결; 사용자별 pending proposal 1개 제약 |
+| `saved_jobs` | 모든 인증 사용자가 공유해 조회하는 공고 카탈로그. 원문/추출 결과·마감일·출처를 보관하며 사용자별 필터나 `(user_id, source_key)` 제약을 두지 않는다. |
+| `plans` | 사용자별 계획, 출처 proposal·profile hash·assessment ID·선택 공고 snapshot, 제목·기간·상태·진행률·재시작 안내 상태; 사용자당 active 1개 partial unique index |
+| `schedule_items` | `plan_id`·선택적 `saved_job_id`, milestone/task/interview 종류, 예정/완료 시각·상태·metadata; 사용자·부모 리소스 소유권을 복합 FK로 검증. 날짜별 모든 progress task 완료 여부·달성 시각·EXP를 트랜잭션으로 계산한다. |
+| `ai_results` | 온보딩 평가·계획 제안·문서/면접 결과; proposal hash, profile/선택 공고 snapshot, model/prompt 버전, request ID 및 applied plan 연결; 사용자별 pending proposal 1개 제약 |
 | `ai_logs` / `ai_feedbacks` | 실제 AI 호출의 request ID·상태·latency·오류 및 사용자 평가. 비밀번호·API 키·원문 민감 프롬프트는 저장 금지 |
 
 `password_hash`는 Argon2id 해시만 저장하고 API/로그/에러 응답에서는 제외한다. Streamlit은 DB에 직접 접근하지 않으며, FastAPI의 JWT `sub`로 사용자 범위를 강제한다.
@@ -390,6 +404,7 @@ AI 기능은 사용자 화면의 장식 요소가 아니라 관리자 운영 화
 | 온보딩 필수 답변 누락 | 누락 필드와 재질문 반환, 확정 불가 | “목표 기간을 입력해 주세요.” |
 | 목표일이 시작일보다 이른 경우 | 400 반환, 날짜 검증 | “목표 종료일은 시작일 이후여야 합니다.” |
 | 공고 URL/텍스트 불량 | 형식 검증, 원문 재입력 요청 | “공고 내용을 확인할 수 없습니다. 텍스트를 붙여 넣어 주세요.” |
+| 선택 공고 없음/마감 | `SAVED_JOB_NOT_FOUND`(404) 또는 `SAVED_JOB_EXPIRED`(422), 계획 제안 생성 차단 | “선택한 공고를 사용할 수 없습니다. 다른 공고를 선택해 주세요.” |
 | AI 분석 실패/시간 초과 | `FAILED` 저장, 제한된 재시도·관리자 모니터링 | “분석이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.” |
 | 승인 충돌(동시 변경) | 로드맵 버전 검사, 409 반환, 최신 제안 재조회 | “계획이 변경되었습니다. 최신 내용을 확인해 주세요.” |
 | 이미 결정된 제안 재승인 | 멱등 처리 또는 409, 중복 반영 금지 | “이미 처리된 제안입니다.” |
@@ -441,6 +456,13 @@ AI 기능은 사용자 화면의 장식 요소가 아니라 관리자 운영 화
 - 같은 `request_id`·같은 본문 재시도 시 동일 응답 반환, 같은 `request_id`에 다른 본문을 사용하면 `IDEMPOTENCY_KEY_REUSED` 반환
 - 계획 제안 생성 → pending 조회 → 승인 → active 계획/일정 생성 → task 완료 → 진행률 재계산 → 전체 완료 흐름
 - 승인 전 active 계획 유지, pending proposal/active plan 중복 생성 차단, 승인 트랜잭션 실패 시 이전 active 계획 보존
+- 공용 공고 목록 빈 배열·최신순 정렬, 선호 환경 기반 공고 추천·일치 없음(0점)·공고 없음(null) 반환
+- 추천 후보에서 마감 공고 제외, 최대 40건 후보 선택, Gemini 추천 결과의 DB 후보 검증, Gemini 실패 시 `keyword_fallback` 전환 검증
+- 선택 공고 기반 계획 제안의 `saved_job_id` 존재·마감일 검증, 동일 `request_id`와 공고 snapshot 재시도, 선택 공고 없는 프로필 기반 제안 흐름 검증
+- `GET /plans/summary`의 전체 상태 포함·생성일 내림차순·통합 진행률·계획 없음(0 지표) 반환 검증
+- `GET /quests/today`의 활성 계획 없음/오늘 범위 밖/오늘 task 완료 상태와 `PATCH /quests/{task_id}`의 오늘 범위 제한 검증
+- 날짜 최초 달성 시 `+20 EXP`, 달성 취소 시 `-20 EXP`, 같은 상태 재요청 시 `0 EXP` 및 누적 EXP 보존
+- 게시 중 공지만 `GET /notices`에 고정 우선·게시일 내림차순으로 노출되는지 검증
 - 관리자 권한과 일반 사용자 접근 차단, 페이징/필터, 오류 응답 형식
 - 로그인 5회 실패 잠금, 토큰 만료, Gemini 실패·rate limit, 온보딩 revision 충돌, 만료 세션, 중복 승인 예외 처리
 
