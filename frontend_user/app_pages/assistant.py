@@ -1,9 +1,10 @@
+from uuid import uuid4
+
 import streamlit as st
 import streamlit.components.v1 as components
 
-from clients.assistant_client import start_assistant_session
+from clients.assistant_client import send_chat_message, start_assistant_session
 from core.api_client import BackendAPIError
-
 
 SUGGESTED_PROMPTS = [
     "내 프로필에 맞는 채용공고를 추천해 줘",
@@ -26,6 +27,19 @@ def initialize_chat_state() -> None:
         st.session_state.assistant_initializing = False
     if "assistant_init_attempted" not in st.session_state:
         st.session_state.assistant_init_attempted = False
+    if "assistant_revision" not in st.session_state:
+        st.session_state.assistant_revision = 0
+    if "assistant_retry_required" not in st.session_state:
+        st.session_state.assistant_retry_required = False
+
+    # 이전 UI 버전에서 문자열로 저장한 미처리 질문도 새 요청 형식으로 복구합니다.
+    pending = st.session_state.assistant_pending_question
+    if isinstance(pending, str) and pending.strip():
+        st.session_state.assistant_pending_question = {
+            "text": pending.strip(),
+            "request_id": str(uuid4()),
+            "expected_revision": st.session_state.assistant_revision,
+        }
 
 
 def initialize_assistant_session(message_area) -> None:
@@ -44,6 +58,9 @@ def initialize_assistant_session(message_area) -> None:
         with st.spinner("AI 상담을 준비하고 있습니다..."):
             result = start_assistant_session()
         st.session_state.assistant_session_id = result["session_id"]
+        st.session_state.assistant_revision = result["revision"]
+        st.session_state.assistant_pending_question = None
+        st.session_state.assistant_retry_required = False
         st.session_state.assistant_messages = [
             {
                 "role": "assistant",
@@ -117,18 +134,80 @@ def apply_chat_style() -> None:
     )
 
 
-def submit_message(text: str) -> None:
-    """질문을 화면 상태에 저장합니다. API 호출은 client 연결 단계에서 추가합니다."""
+def submit_message(text: str) -> bool:
+    """새 질문과 재시도에 사용할 멱등성 요청 정보를 화면 상태에 저장합니다."""
 
     normalized_text = text.strip()
-    if not normalized_text:
-        return
+    if (
+        not normalized_text
+        or not st.session_state.get("assistant_session_id")
+        or st.session_state.get("assistant_pending_question")
+    ):
+        return False
 
-    # 아직 실제 전송 전이므로 사용자 질문과 미처리 질문 상태만 저장합니다.
+    expected_revision = st.session_state.get("assistant_revision")
+    if not isinstance(expected_revision, int) or expected_revision < 0:
+        return False
+
     st.session_state.assistant_messages.append(
         {"role": "user", "content": normalized_text}
     )
-    st.session_state.assistant_pending_question = normalized_text
+    st.session_state.assistant_pending_question = {
+        "text": normalized_text,
+        "request_id": str(uuid4()),
+        "expected_revision": expected_revision,
+    }
+    st.session_state.assistant_retry_required = False
+    return True
+
+
+def process_pending_message(message_area) -> None:
+    """대기 중인 질문을 한 번 전송하고 성공 시 revision과 답변을 반영합니다."""
+
+    pending = st.session_state.get("assistant_pending_question")
+    if (
+        not isinstance(pending, dict)
+        or st.session_state.assistant_submitting
+        or st.session_state.assistant_retry_required
+    ):
+        return
+
+    session_id = st.session_state.get("assistant_session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return
+
+    st.session_state.assistant_submitting = True
+    try:
+        with st.spinner("AI가 답변을 준비하고 있습니다..."):
+            result = send_chat_message(
+                session_id=session_id,
+                expected_revision=pending["expected_revision"],
+                text=pending["text"],
+                request_id=pending["request_id"],
+            )
+        st.session_state.assistant_revision = result["revision"]
+        st.session_state.assistant_messages.append(
+            {"role": "assistant", "content": result["assistant_message"]}
+        )
+        st.session_state.assistant_pending_question = None
+        st.session_state.assistant_retry_required = False
+    except (BackendAPIError, ValueError) as error:
+        if (
+            isinstance(error, BackendAPIError)
+            and error.code == "ASSISTANT_SESSION_EXPIRED"
+        ):
+            # 만료된 요청은 재시도해도 성공할 수 없으므로 현재 상담을 닫습니다.
+            st.session_state.assistant_pending_question = None
+            st.session_state.pop("assistant_session_id", None)
+            st.session_state.assistant_revision = 0
+            st.session_state.assistant_retry_required = False
+        else:
+            # 자동 재실행 시 같은 요청이 무한 전송되지 않도록 사용자 재시도를 기다립니다.
+            st.session_state.assistant_retry_required = True
+        message = error.message if isinstance(error, BackendAPIError) else str(error)
+        message_area.error(message)
+    finally:
+        st.session_state.assistant_submitting = False
 
 
 def scroll_to_latest_message() -> None:
@@ -176,6 +255,7 @@ def show_assistant() -> None:
         message_area.success(flash_message)
 
     initialize_assistant_session(message_area)
+    process_pending_message(message_area)
 
     st.markdown(
         """
@@ -190,30 +270,44 @@ def show_assistant() -> None:
         unsafe_allow_html=True,
     )
 
-    top_left, top_right = st.columns([4, 1])
+    _, top_right = st.columns([4, 1])
     with top_right:
         if st.button("새 대화", use_container_width=True):
             st.session_state.assistant_messages = []
             st.session_state.assistant_pending_question = None
             st.session_state.pop("assistant_session_id", None)
+            st.session_state.assistant_revision = 0
+            st.session_state.assistant_retry_required = False
+            st.session_state.assistant_submitting = False
             st.session_state.assistant_init_attempted = False
             st.rerun()
 
     st.markdown('<div class="suggestion-title">추천 질문</div>', unsafe_allow_html=True)
+    interaction_disabled = bool(
+        not st.session_state.get("assistant_session_id")
+        or st.session_state.assistant_submitting
+        or st.session_state.assistant_pending_question
+    )
     prompt_columns = st.columns(3)
     for column, prompt in zip(prompt_columns, SUGGESTED_PROMPTS):
         with column:
-            if st.button(prompt, use_container_width=True, key=f"prompt_{prompt}"):
-                submit_message(prompt)
+            if st.button(
+                prompt,
+                use_container_width=True,
+                key=f"prompt_{prompt}",
+                disabled=interaction_disabled,
+            ) and submit_message(prompt):
                 st.rerun()
 
     st.divider()
 
-    if not st.session_state.assistant_messages:
-        if st.session_state.assistant_init_attempted:
-            if st.button("AI 상담 초기화 다시 시도", use_container_width=True):
-                st.session_state.assistant_init_attempted = False
-                st.rerun()
+    if (
+        not st.session_state.assistant_messages
+        and st.session_state.assistant_init_attempted
+        and st.button("AI 상담 초기화 다시 시도", use_container_width=True)
+    ):
+        st.session_state.assistant_init_attempted = False
+        st.rerun()
 
     # 대화 내용과 입력창을 한 컨테이너에 넣어 하나의 AI 상담 화면으로 구성합니다.
     with st.container(border=True):
@@ -227,7 +321,19 @@ def show_assistant() -> None:
                 st.info("AI 상담을 시작하려면 아래에 질문을 입력해 주세요.")
 
             if st.session_state.assistant_pending_question:
-                st.info("질문이 화면 상태에 저장되었습니다. AI API 연결 후 응답을 표시합니다.")
+                if st.session_state.assistant_retry_required:
+                    st.warning(
+                        "답변을 받지 못했습니다. 아래 버튼을 누르면 같은 요청을 다시 전송합니다."
+                    )
+                    if st.button(
+                        "AI 답변 다시 요청",
+                        use_container_width=True,
+                        key="assistant_retry",
+                    ):
+                        st.session_state.assistant_retry_required = False
+                        st.rerun()
+                else:
+                    st.info("AI 답변을 기다리고 있습니다.")
 
         scroll_to_latest_message()
 
@@ -235,11 +341,10 @@ def show_assistant() -> None:
         user_text = st.chat_input(
             "예: 내게 맞는 백엔드 개발자 공고를 추천해 줘",
             max_chars=4000,
-            disabled=st.session_state.assistant_submitting,
+            disabled=interaction_disabled,
         )
 
-    if user_text:
-        submit_message(user_text)
+    if user_text and submit_message(user_text):
         st.rerun()
 
 

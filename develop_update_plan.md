@@ -264,7 +264,7 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 - `GET /notices`는 로그인 사용자에게 현재 게시 중인 공지만 고정 여부·게시일·ID 순으로 반환하며, v1에서는 페이지네이션과 읽음 상태를 제공하지 않는다.
 - `GET /plans/summary`는 active·completed·expired·superseded·rejected·draft 등 모든 내 계획을 생성일 내림차순으로 반환한다. 전체 task 수·완료 수·내림 진행률과 누적 `user_exp`를 함께 제공하며, 계획이 없으면 빈 배열과 0 지표를 반환한다.
 - AI 취업 코치 상담은 온보딩과 별도 세션이다. 시작·메시지·종료 요청마다 UUID `request_id`를 사용하고, 메시지·종료 시에는 최근 성공 응답의 `revision`을 `expected_revision`으로 보낸다. 요청에 정의되지 않은 필드는 거부한다.
-- 코치 세션은 생성 시점부터 24시간 TTL이며 사용자당 활성 세션은 최대 3개다. 성공한 사용자 메시지는 최대 20개, 사용자·AI 발화 합계는 40,000자, AI 응답은 12,000자를 넘을 수 없다.
+- 코치 세션 데이터는 생성 시점부터 최대 24시간 보관하며, 활성 상담은 생성 또는 마지막 사용자 입력 접수 후 45초에 종료된다. 사용자당 활성 세션은 최대 6개다. 성공한 사용자 메시지는 최대 20개, 사용자·AI 발화 합계는 40,000자, AI 응답은 12,000자를 넘을 수 없다.
 - 코치 메시지는 일반 상담, 유효 공고 추천, 활성 로드맵/일정 조회를 지원한다. 공고 추천은 최대 1건, 일정 조회는 최대 28일 범위로 제한한다.
 - `finalize`는 검증된 구조화 상담 보고서(JSONB, 세션당 1개·128KiB 이하)를 생성하고, 사용자 원문 대화는 삭제한다. 최초 성공은 201, 같은 멱등 요청 재전송은 200으로 동일 보고서를 반환하며 종료된 세션은 Redis tombstone으로 재사용을 막는다.
 - 관리자·상담·서류·면접 API는 현재 사용자 API 명세의 범위 밖 확장 기능이다. 3일 MVP에서는 명세에 추가된 공고·오늘의 할 일·공지 API와 AI 로그 대시보드를 우선 구현하고, 나머지는 별도 OpenAPI 문서로 추가한 뒤 화면을 연결한다.
@@ -285,7 +285,7 @@ AI_JOB_COACH는 사용자의 현재 역량과 취업 목표를 대화로 파악�
 | `plans` | 사용자별 계획, 출처 proposal·profile hash·assessment ID·선택 공고 snapshot, 제목·기간·상태·진행률·재시작 안내 상태; 사용자당 active 1개 partial unique index |
 | `schedule_items` | `plan_id`·선택적 `saved_job_id`, milestone/task/interview 종류, 예정/완료 시각·상태·metadata; 사용자·부모 리소스 소유권을 복합 FK로 검증. 날짜별 모든 progress task 완료 여부·달성 시각·EXP를 트랜잭션으로 계산한다. |
 | `ai_results` | 온보딩 평가·계획 제안·문서/면접 결과; proposal hash, profile/선택 공고 snapshot, model/prompt 버전, request ID 및 applied plan 연결; 사용자별 pending proposal 1개 제약 |
-| `assistant_sessions` | 사용자 ID·확정 프로필 snapshot·revision·생성/만료 시각·상태·멱등성 cache key; TTL 24시간, 사용자별 활성 세션 3개 이하 |
+| `assistant_sessions` | 사용자 ID·확정 프로필 snapshot·revision·생성/만료 시각·상태·멱등성 cache key; 데이터 보관 상한 24시간, 45초 유휴 종료, 사용자별 활성 세션 6개 이하 |
 | `assistant_reports` | 세션당 1개 불변 구조화 상담 보고서(JSONB, 128KiB 이하), 상태 `VALIDATED` 강제, 생성 후 원문 대화 삭제 및 tombstone 기록 |
 | `assistant_tombstones` | 종료/만료 세션 식별자와 보고서 재전송 정보. 종료된 세션의 메시지 재사용·중복 보고서 생성을 차단 |
 | `ai_logs` / `ai_feedbacks` | 실제 AI 호출의 request ID·상태·latency·오류 및 사용자 평가. 비밀번호·API 키·원문 민감 프롬프트는 저장 금지 |
@@ -478,7 +478,7 @@ AI 기능은 사용자 화면의 장식 요소가 아니라 관리자 운영 화
 - `GET /plans/summary`의 전체 상태 포함·생성일 내림차순·통합 진행률·계획 없음(0 지표) 반환 검증
 - 계정 `login_id`/`user_name` 부분 수정, 중복 ID 거절, 탈퇴 시 사용자 소유 데이터·세션 삭제 및 공유 공고 보존 검증
 - 탈퇴·비활성 계정의 기존 Bearer token 거절과 204 응답 후 클라이언트 token/cache 정리 검증
-- 코치 세션 생성·revision CAS·request_id 멱등 재전송, 24시간 TTL·활성 3개·발화 20개·대화 40,000자·응답 12,000자 제한 검증
+- 코치 세션 생성·revision CAS·request_id 멱등 재전송, 24시간 데이터 보관 상한·45초 유휴 종료·활성 6개·발화 20개·대화 40,000자·응답 12,000자 제한 검증
 - 코치 종료 후 `VALIDATED` 구조화 보고서 생성, 원문 대화 삭제, 201 최초 응답·200 replay·종료 tombstone 재사용 차단 검증
 - `GET /quests/today`의 활성 계획 없음/오늘 범위 밖/오늘 task 완료 상태와 `PATCH /quests/{task_id}`의 오늘 범위 제한 검증
 - 날짜 최초 달성 시 `+20 EXP`, 달성 취소 시 `-20 EXP`, 같은 상태 재요청 시 `0 EXP` 및 누적 EXP 보존

@@ -42,4 +42,8 @@ bb.py
 /docs/*
 !/docs/API_SPEC.md
 !/docs/CLI.md
+!/docs/images/
+!/docs/images/database-structure.png
+!/docs/images/database-structure.svg
+!/docs/images/service-flow.png
 TESTING.md

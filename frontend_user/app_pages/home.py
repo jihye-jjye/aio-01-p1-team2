@@ -1,6 +1,13 @@
 #home.py 사용자 모드와 관리자 모드를 선택하는 첫 화면입니다.
 
+import os
+from pathlib import Path
+
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+ADMIN_FRONTEND_URL = os.getenv("ADMIN_FRONTEND_URL", "").strip().rstrip("/")
 
 
 def apply_home_style() -> None:
@@ -90,8 +97,19 @@ def show_home() -> None:
             """,
             unsafe_allow_html=True,
         )
-        if st.button("관리자로 시작하기", use_container_width=True):
-            st.switch_page("app_pages/admin_login.py")
+        if ADMIN_FRONTEND_URL:
+            st.link_button(
+                "관리자로 시작하기",
+                ADMIN_FRONTEND_URL,
+                use_container_width=True,
+            )
+        else:
+            st.button(
+                "관리자로 시작하기",
+                use_container_width=True,
+                disabled=True,
+            )
+            st.caption("ADMIN_FRONTEND_URL 설정이 필요합니다.")
 
     st.markdown(
         '<div class="user-status">CONNECTED TO AI CAREER SERVICE · READY</div>',

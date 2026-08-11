@@ -1580,7 +1580,7 @@ def _friendly_error(
         "ASSISTANT_SESSION_EXPIRED": "상담 세션이 만료되었습니다. 새 상담을 시작해주세요.",
         "ASSISTANT_SESSION_BUSY": "이전 상담 요청을 처리 중입니다. 잠시 후 다시 시도해주세요.",
         "ASSISTANT_REVISION_CONFLICT": "상담 상태가 변경되었습니다. 새 상담을 시작해주세요.",
-        "ASSISTANT_SESSION_LIMIT_REACHED": "동시에 유지할 수 있는 상담은 최대 3개입니다.",
+        "ASSISTANT_SESSION_LIMIT_REACHED": "동시에 유지할 수 있는 상담은 최대 6개입니다.",
         "ASSISTANT_ALREADY_FINALIZED": "이미 종료된 상담입니다.",
         "ASSISTANT_REPORT_EMPTY": "메시지를 한 번 이상 보낸 뒤 상담을 종료해주세요.",
         "ASSISTANT_TURN_LIMIT_REACHED": "한 상담에서는 메시지를 최대 20개까지 보낼 수 있습니다.",

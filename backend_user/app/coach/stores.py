@@ -28,13 +28,40 @@ from app.coach.models import (
     ProcessedAssistantRequest,
 )
 
-MAX_ACTIVE_SESSIONS = 3
+MAX_ACTIVE_SESSIONS = 6
+SESSION_IDLE_TIMEOUT_MS = 45_000
+
+LOAD_SESSION_SCRIPT = """
+-- assistant-load-session
+local current_json = redis.call('GET', KEYS[1])
+if current_json == false then
+  return false
+end
+local ok, current = pcall(cjson.decode, current_json)
+if not ok then
+  return -5
+end
+if current['status'] == 'active' then
+  local redis_time = redis.call('TIME')
+  local now_epoch_ms = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
+  local expires_epoch_ms = tonumber(current['expires_at_epoch_ms'])
+  local idle_expires_epoch_ms = tonumber(redis.call('ZSCORE', KEYS[2], ARGV[1]))
+  if expires_epoch_ms == nil or expires_epoch_ms <= now_epoch_ms
+      or idle_expires_epoch_ms == nil or idle_expires_epoch_ms <= now_epoch_ms then
+    redis.call('DEL', KEYS[1])
+    redis.call('ZREM', KEYS[2], ARGV[1])
+    return false
+  end
+end
+return current_json
+"""
 
 CREATE_SESSION_SCRIPT = """
 -- assistant-create-session
 local redis_time = redis.call('TIME')
 local now_epoch_ms = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
 local expires_epoch_ms = tonumber(ARGV[4])
+local idle_expires_epoch_ms = math.min(expires_epoch_ms, now_epoch_ms + tonumber(ARGV[5]))
 if expires_epoch_ms <= now_epoch_ms then
   return -2
 end
@@ -42,19 +69,57 @@ if redis.call('EXISTS', KEYS[2]) == 1 then
   return 2
 end
 redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', now_epoch_ms)
-if redis.call('ZCARD', KEYS[3]) >= tonumber(ARGV[5]) then
+if redis.call('ZCARD', KEYS[3]) >= tonumber(ARGV[6]) then
   return -1
 end
 if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PXAT', expires_epoch_ms) == false then
   return -3
 end
 redis.call('SET', KEYS[2], ARGV[2], 'PXAT', expires_epoch_ms)
-redis.call('ZADD', KEYS[3], expires_epoch_ms, ARGV[3])
+redis.call('ZADD', KEYS[3], idle_expires_epoch_ms, ARGV[3])
 local last_member = redis.call('ZRANGE', KEYS[3], -1, -1, 'WITHSCORES')
 if #last_member == 2 then
   redis.call('PEXPIREAT', KEYS[3], tonumber(last_member[2]))
 end
 return 1
+"""
+
+ADMIT_TURN_SCRIPT = """
+-- assistant-admit-turn
+local current_json = redis.call('GET', KEYS[1])
+if current_json == false then
+  return -1
+end
+local ok, current = pcall(cjson.decode, current_json)
+if not ok then
+  return -5
+end
+if current['status'] ~= 'active' then
+  return -3
+end
+if tonumber(current['revision']) ~= tonumber(ARGV[2]) then
+  return -4
+end
+local redis_time = redis.call('TIME')
+local now_epoch_ms = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
+local expires_epoch_ms = tonumber(current['expires_at_epoch_ms'])
+local idle_expires_epoch_ms = tonumber(redis.call('ZSCORE', KEYS[2], ARGV[1]))
+if expires_epoch_ms == nil or expires_epoch_ms <= now_epoch_ms
+    or idle_expires_epoch_ms == nil or idle_expires_epoch_ms <= now_epoch_ms then
+  redis.call('DEL', KEYS[1])
+  redis.call('ZREM', KEYS[2], ARGV[1])
+  return -1
+end
+local next_idle_expires_epoch_ms = math.min(
+  expires_epoch_ms,
+  now_epoch_ms + tonumber(ARGV[3])
+)
+redis.call('ZADD', KEYS[2], next_idle_expires_epoch_ms, ARGV[1])
+local last_member = redis.call('ZRANGE', KEYS[2], -1, -1, 'WITHSCORES')
+if #last_member == 2 then
+  redis.call('PEXPIREAT', KEYS[2], tonumber(last_member[2]))
+end
+return current_json
 """
 
 COMMIT_TURN_SCRIPT = """
@@ -112,7 +177,9 @@ end
 local redis_time = redis.call('TIME')
 local now_epoch_ms = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
 local expires_epoch_ms = tonumber(current['expires_at_epoch_ms'])
-if expires_epoch_ms == nil or expires_epoch_ms <= now_epoch_ms then
+local idle_expires_epoch_ms = tonumber(redis.call('ZSCORE', KEYS[3], ARGV[4]))
+if expires_epoch_ms == nil or expires_epoch_ms <= now_epoch_ms
+    or idle_expires_epoch_ms == nil or idle_expires_epoch_ms <= now_epoch_ms then
   redis.call('DEL', KEYS[1])
   redis.call('ZREM', KEYS[3], ARGV[4])
   return -1
@@ -148,9 +215,17 @@ class RedisAssistantSessionStore:
         user_id: UUID,
         session_id: UUID,
     ) -> AssistantSessionState | AssistantSessionTombstone | None:
-        raw = await self._redis.get(self._session_key(user_id, session_id))
-        if raw is None:
+        raw = await self._redis.eval(
+            LOAD_SESSION_SCRIPT,
+            2,
+            self._session_key(user_id, session_id),
+            self._active_key(user_id),
+            str(session_id),
+        )
+        if raw is None or raw is False:
             return None
+        if raw == -5:
+            raise AssistantDataIntegrityError()
         try:
             payload = json.loads(raw)
             model = (
@@ -161,9 +236,6 @@ class RedisAssistantSessionStore:
             state = model.model_validate(payload)
             if state.user_id != user_id or state.session_id != session_id:
                 raise ValueError("assistant session identity mismatch")
-            if state.expires_at <= self._now_provider():
-                await self._redis.delete(self._session_key(user_id, session_id))
-                return None
             return state
         except (json.JSONDecodeError, TypeError, ValueError, ValidationError) as exc:
             raise AssistantDataIntegrityError() from exc
@@ -213,6 +285,7 @@ class RedisAssistantSessionStore:
                 request.model_dump_json(),
                 str(state.session_id),
                 state.expires_at_epoch_ms,
+                SESSION_IDLE_TIMEOUT_MS,
                 MAX_ACTIVE_SESSIONS,
             )
         )
@@ -278,6 +351,38 @@ class RedisAssistantSessionStore:
         if result == -4:
             raise AssistantRevisionConflictError()
         raise AssistantDataIntegrityError()
+
+    async def admit_turn(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        expected_revision: int,
+    ) -> AssistantSessionState:
+        raw = await self._redis.eval(
+            ADMIT_TURN_SCRIPT,
+            2,
+            self._session_key(user_id, session_id),
+            self._active_key(user_id),
+            str(session_id),
+            expected_revision,
+            SESSION_IDLE_TIMEOUT_MS,
+        )
+        if raw == -1:
+            raise AssistantSessionExpiredError()
+        if raw == -3:
+            raise AssistantAlreadyFinalizedError()
+        if raw == -4:
+            raise AssistantRevisionConflictError()
+        if raw == -5:
+            raise AssistantDataIntegrityError()
+        try:
+            state = AssistantSessionState.model_validate_json(raw)
+            if state.user_id != user_id or state.session_id != session_id:
+                raise ValueError("assistant session identity mismatch")
+            return state
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise AssistantDataIntegrityError() from exc
 
     async def replace_with_tombstone(
         self,
@@ -405,7 +510,7 @@ class RedisAssistantSessionStore:
 
     @staticmethod
     def _active_key(user_id: UUID) -> str:
-        return f"assistant:v1:{user_id}:active"
+        return f"assistant:v2:{user_id}:active"
 
 
 class RedisAssistantSessionLocks:

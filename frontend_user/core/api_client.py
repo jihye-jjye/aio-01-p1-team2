@@ -9,13 +9,10 @@ from dotenv import load_dotenv
 
 from core.session import clear_auth_state, get_access_token
 
-
 # frontend_user/.env에 있는 백엔드 주소를 읽습니다.
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-BACKEND_URL = os.getenv(
-    "BACKEND_URL",
-    "https://aio-01-p1-team2-1.onrender.com/api/v1",
-).rstrip("/")
+DEFAULT_BACKEND_URL = "https://aio-01-p1-team2-1.onrender.com/api/v1"
+BACKEND_URL = (os.getenv("BACKEND_URL") or DEFAULT_BACKEND_URL).rstrip("/")
 REQUEST_TIMEOUT = 60.0
 
 class BackendAPIError(Exception):
@@ -71,11 +68,13 @@ def request(
 ) -> Any:
     """요청 성공 시 JSON을, 실패 시 ``BackendAPIError``를 반환합니다."""
 
+    normalized_path = f"/{path.lstrip('/')}"
+
     # 페이지마다 httpx 코드를 반복하지 않도록 모든 HTTP 요청을 이 함수가 담당합니다.
     try:
         response = httpx.request(
             method,
-            f"{BACKEND_URL}{path}",
+            f"{BACKEND_URL}{normalized_path}",
             headers=_headers(auth_required),
             json=json,
             data=data,

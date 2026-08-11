@@ -3,7 +3,7 @@
 이 문서는 `backend_user/app/cli`의 사용자 흐름과 명령어 계약을 설명한다.
 
 - 작성일: 2026-08-11
-- 실행 환경: Python 3.12, `uv`, FastAPI `http://192.100.200.209:8010`
+- 실행 환경: Python 3.12, `uv`, FastAPI `https://aio-01-p1-team2-1.onrender.com`
 - 관련 문서: [`README.md`](../README.md), [`API_SPEC.md`](API_SPEC.md), [`TESTING.md`](../TESTING.md)
 
 ## 1. 실행
@@ -191,6 +191,8 @@ task 변경은 `PATCH /api/v1/quests/{task_id}`에 `{"status":"completed"}` 또�
 
 일반 입력은 `POST /api/v1/assistant/sessions/{session_id}/messages`로 보내며, 마지막 성공 응답의 revision을 `expected_revision`으로 사용한다. 성공 응답은 revision이 정확히 1 증가하고 같은 session ID인지 확인한 뒤 표시한다. 공고와 일정의 DB 사실은 서버가 만든 `assistant_message`만 리터럴 텍스트로 표시하고 내부 `tool_results` 원문은 출력하지 않는다.
 
+활성 상담은 생성 또는 마지막 사용자 입력 접수 후 45초가 지나면 종료된다. 입력 접수 때마다 유휴 기한은 45초 뒤로 갱신되지만 응답의 24시간 절대 `expires_at`은 바뀌지 않는다. `ASSISTANT_SESSION_EXPIRED`를 받으면 현재 상담을 종료하고 새 상담을 시작하도록 안내한다. 유휴 종료만으로 보고서는 자동 생성되지 않는다.
+
 | 명령 | 동작 |
 | --- | --- |
 | `/finish` | 한 번 이상 메시지를 보낸 상담을 종료하고 구조화 보고서 저장 |
@@ -268,8 +270,8 @@ EOF와 Ctrl-C에서도 HTTP client를 닫는다. Ctrl-C가 숨김 비밀번호 �
 
 ## 8. 환경과 제한
 
-- CLI 기본 백엔드 주소: `http://192.100.200.209:8010`
+- CLI 기본 백엔드 주소: `https://aio-01-p1-team2-1.onrender.com`
 - HTTP timeout: 전체 응답 300초, connect 10초
-- CLI 자체에는 backend 주소를 바꾸는 인자가 없다.
+- CLI 자체에는 backend 주소 인자가 없으며, 로컬 연결은 `BACKEND_BASE_URL=http://127.0.0.1:8010` 환경 변수로 덮어쓴다.
 - backend 및 `create-demo-user` 설정은 `backend_user/.env.example`과 [`README.md`](../README.md)를 따른다.
 - fresh DB는 `sql/07_notifications.sql`, 기존 DB는 관리자 migration role로 재실행 가능한 `sql/22_notifications_login_roadmap.sql`이 적용돼 있어야 한다. `supabase db push`를 전제로 하지 않는다.

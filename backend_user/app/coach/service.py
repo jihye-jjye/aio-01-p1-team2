@@ -59,7 +59,7 @@ from app.coach.presentation import (
     render_schedule_lookup,
 )
 from app.coach.schedule_ranges import resolve_schedule_range
-from app.coach.stores import CreateSessionStoreResult
+from app.coach.stores import MAX_ACTIVE_SESSIONS, CreateSessionStoreResult
 from app.gemini.errors import GeminiError, GeminiInvalidResponseError
 from app.profiles.models import ProfileOnboardingData, ProfileRecord
 from app.saved_jobs.models import SavedJobRecommendationView
@@ -101,12 +101,20 @@ class SessionStorePort(Protocol):
         *,
         state: AssistantSessionState,
         request: ProcessedAssistantRequest,
-        max_active_sessions: int = 3,
+        max_active_sessions: int = MAX_ACTIVE_SESSIONS,
     ) -> CreateSessionStoreResult: ...
 
     async def load(
         self, *, user_id: UUID, session_id: UUID
     ) -> AssistantSessionState | AssistantSessionTombstone | None: ...
+
+    async def admit_turn(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        expected_revision: int,
+    ) -> AssistantSessionState: ...
 
     async def commit_turn(
         self,
@@ -280,7 +288,7 @@ class CareerCoachService:
             stored = await self._sessions.create_session(
                 state=state,
                 request=request,
-                max_active_sessions=3,
+                max_active_sessions=MAX_ACTIVE_SESSIONS,
             )
             if not stored.created:
                 if stored.replay is None:
@@ -337,6 +345,11 @@ class CareerCoachService:
                 raise AssistantTurnLimitReachedError()
             if state.transcript_chars + len(text) > MAX_TRANSCRIPT_CHARS:
                 raise AssistantTranscriptLimitReachedError()
+            state = await self._sessions.admit_turn(
+                user_id=user_id,
+                session_id=session_id,
+                expected_revision=expected_revision,
+            )
 
             route_reference_at = _aware_now(self._now())
             route = await self._coach.route(
@@ -548,6 +561,8 @@ class CareerCoachService:
                     request=request,
                 )
             except (RedisError, AssistantDomainError):
+                # The durable DB write is the finalize commit point. Once the final
+                # active-state check passes, Redis cleanup may finish after idle expiry.
                 pass
             return FinalizeServiceResult(
                 response=response,

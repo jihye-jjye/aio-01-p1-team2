@@ -79,7 +79,10 @@ OPENAPI_TAGS = [
     },
     {
         "name": "assistant",
-        "description": "24시간 원문 보관, DB 사실 조회와 구조화 보고서를 제공하는 AI 취업 코치",
+        "description": (
+            "최대 24시간 원문 보관, 45초 유휴 종료, DB 사실 조회와 구조화 보고서를 "
+            "제공하는 AI 취업 코치"
+        ),
     },
 ]
 

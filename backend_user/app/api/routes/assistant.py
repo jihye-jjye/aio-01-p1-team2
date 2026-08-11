@@ -37,7 +37,10 @@ _COMMON_ERRORS = {
     response_model=AssistantSessionCreateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="AI 취업 코치 상담 시작",
-    description="완료 프로필과 코치 스타일을 24시간 세션 snapshot으로 고정합니다.",
+    description=(
+        "완료 프로필과 코치 스타일을 최대 24시간 snapshot으로 고정하며, "
+        "마지막 입력 후 45초가 지나면 활성 세션을 종료합니다."
+    ),
     responses=_COMMON_ERRORS,
 )
 async def create_assistant_session(

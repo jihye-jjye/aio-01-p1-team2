@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Literal, Protocol
@@ -17,6 +18,8 @@ from app.notifications.models import (
     PlanEndedPayloadV1,
     RoadmapChangePayloadV1,
 )
+
+DEFAULT_BACKEND_BASE_URL = "https://aio-01-p1-team2-1.onrender.com"
 
 
 class ApiError(RuntimeError):
@@ -92,11 +95,16 @@ class CoachApiClient:
     def __init__(
         self,
         *,
-        base_url: str = "http://192.100.200.209:8010",
+        base_url: str | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
+        resolved_base_url = (
+            base_url
+            or os.getenv("BACKEND_BASE_URL")
+            or DEFAULT_BACKEND_BASE_URL
+        ).rstrip("/")
         self._client = client or httpx.AsyncClient(
-            base_url=base_url,
+            base_url=resolved_base_url,
             timeout=httpx.Timeout(300, connect=10),
         )
         self._owns_client = client is None

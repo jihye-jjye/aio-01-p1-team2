@@ -1,20 +1,34 @@
 """AI 상담 백엔드 API 클라이언트.
 
 화면에서는 Streamlit 상태와 렌더링만 담당하고, 요청 형태와 응답 검증은
-이 모듈에서 관리합니다. CHAT_ENDPOINT는 백엔드 최종 계약에 맞춰 조정합니다.
+이 모듈에서 관리합니다.
 """
 
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from core.api_client import BackendAPIError, request
 
-
-# 백엔드 Swagger의 최종 주소가 달라지면 아래 상수만 수정하면 됩니다.
-CHAT_ENDPOINT = "/chat/gemini"
 SESSION_ENDPOINT = "/assistant/sessions"
 CHAT_TIMEOUT = 30.0
 ALLOWED_ROLES = {"user", "assistant"}
+
+
+def _invalid_response(message: str) -> BackendAPIError:
+    return BackendAPIError("INVALID_RESPONSE", message)
+
+
+def build_chat_history(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """이전 ``chat_client`` import 경로를 위한 대화 필터 호환 함수를 제공합니다."""
+
+    history: list[dict[str, str]] = []
+    for message in messages:
+        role = message.get("role")
+        content = message.get("content")
+        if role not in ALLOWED_ROLES or not isinstance(content, str):
+            continue
+        history.append({"role": role, "content": content})
+    return history
 
 
 def start_assistant_session() -> dict[str, Any]:
@@ -28,63 +42,78 @@ def start_assistant_session() -> dict[str, Any]:
         timeout=CHAT_TIMEOUT,
     )
     if not isinstance(result, dict):
-        raise BackendAPIError(
-            "INVALID_RESPONSE",
-            "AI 상담 세션 응답 형식이 올바르지 않습니다.",
-        )
-    if not isinstance(result.get("session_id"), str):
-        raise BackendAPIError(
-            "INVALID_RESPONSE",
-            "AI 상담 세션 ID가 없습니다.",
-        )
-    if not isinstance(result.get("assistant_message"), str):
-        raise BackendAPIError(
-            "INVALID_RESPONSE",
-            "AI 상담 시작 메시지가 없습니다.",
-        )
-    return result
+        raise _invalid_response("AI 상담 세션 응답 형식이 올바르지 않습니다.")
 
+    session_id = result.get("session_id")
+    assistant_message = result.get("assistant_message")
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise _invalid_response("AI 상담 세션 ID가 없습니다.")
+    if result.get("revision") != 0:
+        raise _invalid_response("AI 상담 세션 revision이 올바르지 않습니다.")
+    if not isinstance(assistant_message, str) or not assistant_message.strip():
+        raise _invalid_response("AI 상담 시작 메시지가 없습니다.")
 
-def build_chat_history(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """화면 메시지 중 백엔드에 전달 가능한 역할과 문자열만 추출합니다."""
-
-    # 버튼 상태 같은 화면용 데이터는 제외하고 role/content만 백엔드에 전달합니다.
-    history: list[dict[str, str]] = []
-    for message in messages:
-        role = message.get("role")
-        content = message.get("content")
-        if role not in ALLOWED_ROLES or not isinstance(content, str):
-            continue
-        history.append({"role": role, "content": content})
-    return history
+    validated = dict(result)
+    validated["session_id"] = session_id.strip()
+    validated["assistant_message"] = assistant_message.strip()
+    return validated
 
 
 def send_chat_message(
-    question: str,
-    messages: list[dict[str, Any]],
-) -> str:
-    """질문과 이전 대화를 전송하고 검증된 AI 답변 문자열을 반환합니다."""
+    session_id: str,
+    expected_revision: int,
+    text: str,
+    *,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    """상담 메시지를 전송하고 세션·revision이 일치하는 응답을 반환합니다."""
 
-    # 질문 앞뒤의 실수로 입력한 공백만 제거합니다.
-    normalized_question = question.strip()
-    if not normalized_question:
+    normalized_session_id = session_id.strip() if isinstance(session_id, str) else ""
+    if not normalized_session_id:
+        raise ValueError("AI 상담 세션이 없습니다.")
+    if (
+        not isinstance(expected_revision, int)
+        or isinstance(expected_revision, bool)
+        or expected_revision < 0
+    ):
+        raise ValueError("AI 상담 revision이 올바르지 않습니다.")
+
+    normalized_text = text.strip() if isinstance(text, str) else ""
+    if not normalized_text:
         raise ValueError("질문을 입력해 주세요.")
 
-    # 현재 질문은 question에 별도로 전달하므로 history에 중복 포함하지 않습니다.
+    if request_id is None:
+        message_request_id = str(uuid4())
+    else:
+        try:
+            message_request_id = str(UUID(request_id))
+        except (TypeError, ValueError, AttributeError) as error:
+            raise ValueError("request_id는 UUID 형식이어야 합니다.") from error
     result = request(
         "POST",
-        CHAT_ENDPOINT,
+        f"{SESSION_ENDPOINT}/{normalized_session_id}/messages",
         json={
-            "question": normalized_question,
-            "messages": build_chat_history(messages),
+            "request_id": message_request_id,
+            "expected_revision": expected_revision,
+            "text": normalized_text,
         },
         auth_required=True,
         timeout=CHAT_TIMEOUT,
     )
 
-    if not isinstance(result, dict) or not isinstance(result.get("answer"), str):
-        raise BackendAPIError(
-            "INVALID_RESPONSE",
-            "AI 상담 응답 형식이 올바르지 않습니다.",
-        )
-    return result["answer"]
+    if not isinstance(result, dict):
+        raise _invalid_response("AI 상담 응답 형식이 올바르지 않습니다.")
+
+    response_session_id = result.get("session_id")
+    response_revision = result.get("revision")
+    assistant_message = result.get("assistant_message")
+    if response_session_id != normalized_session_id:
+        raise _invalid_response("AI 상담 응답의 세션 ID가 일치하지 않습니다.")
+    if response_revision != expected_revision + 1:
+        raise _invalid_response("AI 상담 응답의 revision이 올바르지 않습니다.")
+    if not isinstance(assistant_message, str) or not assistant_message.strip():
+        raise _invalid_response("AI 상담 답변이 없습니다.")
+
+    validated = dict(result)
+    validated["assistant_message"] = assistant_message.strip()
+    return validated

@@ -4,7 +4,8 @@
 
 - 작성일: 2026-08-11
 - 대상 서버: FastAPI `app.main:app` (`title="AI Job Coach API"`, `version="0.1.0"`)
-- Base URL: `http://<API_HOST>:8010/api/v1` (현재 CLI와 `run.sh`의 기본 host는 `192.100.200.209`)
+- 배포 Base URL: `https://aio-01-p1-team2-1.onrender.com/api/v1`
+- 로컬 Base URL: `http://127.0.0.1:8010/api/v1` (`run.sh`는 `0.0.0.0:8010`에 bind)
 - FastAPI 자동 문서: `GET /docs` (Swagger UI), `GET /openapi.json`
 - 프론트엔드 전달 문서: [`FRONTEND_AUTH_ONBOARDING_HANDOFF.md`](FRONTEND_AUTH_ONBOARDING_HANDOFF.md)
 
@@ -17,7 +18,7 @@
 - 5차 검증: 추천 공고 선택형 계획 생성의 요청·응답·checkpoint·멱등성·수락 투영 계약을 repository/API/CLI/OpenAPI 테스트와 대조
 - 6차 검증: 로드맵 완료율 요약(`GET /plans/summary`)의 로드맵별·계정 통합 백분율, 정렬, 빈 상태, 경로 매칭 우선순위 계약을 repository/service/API/CLI/OpenAPI 테스트와 대조
 - 7차 검증: 현재 계정 로그인 ID·이름 수정과 영구 삭제의 인증·검증·중복 처리·활성 계정 확인·삭제 트랜잭션·runtime 권한·OpenAPI 계약을 대조
-- 8차 검증: AI 취업 코치 세션의 절대 TTL·revision CAS·멱등성, 공고/일정 DB 사실 분리, 상담 종료 보고서·Redis tombstone·migration 19~21 계약을 API/service/store/repository/SQL 테스트와 대조
+- 8차 검증: AI 취업 코치 세션의 24시간 절대 보관 상한·45초 유휴 종료·활성 6개 제한·revision CAS·멱등성, 공고/일정 DB 사실 분리, 상담 종료 보고서·Redis tombstone·migration 19~21 계약을 API/service/store/repository/SQL 테스트와 대조
 - 9차 검증: 실제 `TP_dev`에서 migration 21 등록, 수정된 보고서 CHECK의 `VALIDATED` 상태와 정상 보고서 허용·root/nested/array의 금지 키 거부를 확인하고 assistant 3개 POST 경로의 OpenAPI 응답 계약을 재검증
 - 10차 검증: 로그인 로드맵 알림의 KST 7일 동기화, 트리거 집계, 소유권 격리, 미확인 feed, 명시적 확인, API/CLI 응답 검증 계약을 SQL·repository/service/API/CLI 테스트와 대조
 - 검증일: 2026-08-11
@@ -687,7 +688,9 @@ POST /assistant/sessions
 - 동일 `request_id`와 동일 payload는 최초 응답을 재생한다. 동일 ID의 payload·operation·session이 달라지면 `409 IDEMPOTENCY_KEY_REUSED`다.
 - 성공한 사용자 메시지만 revision을 1 증가시킨다. stale `expected_revision`은 `409 ASSISTANT_REVISION_CONFLICT`이며 서버 상태를 바꾸지 않는다.
 - 세션 없음, 만료, 다른 사용자의 session ID는 정보 노출 없이 모두 `409 ASSISTANT_SESSION_EXPIRED`다.
-- 세션은 활동과 무관하게 생성 시점부터 정확히 24시간 후 만료된다. 사용자당 활성 세션은 최대 3개다.
+- 세션 원문과 멱등 데이터의 절대 보관 상한은 생성 시점부터 정확히 24시간이며 활동으로 연장되지 않는다. 활성 세션은 생성 또는 마지막 사용자 입력 접수 후 정확히 45초에 종료되고 활성 개수에서 제외된다. 사용자당 활성 세션은 최대 6개다.
+- 유효한 메시지는 Gemini 처리 전에 Redis에서 원자적으로 접수되어 45초 유휴 기한을 갱신한다. 이미 접수된 요청은 처리 중 유휴 기한이 지나도 결과를 저장할 수 있지만 다음 새 요청은 `409 ASSISTANT_SESSION_EXPIRED`다. 완료된 동일 요청의 replay는 기존 멱등성 계약에 따라 원응답을 반환한다.
+- 활성 인덱스는 유휴 점수 전용 `assistant:v2:*:active`를 사용한다. 배포 시 절대 만료 점수를 쓰는 구버전 인스턴스를 먼저 drain·중지하고 신버전만 트래픽을 받게 하며, 두 버전을 동시에 서비스하지 않는다.
 - 한 세션의 성공한 사용자 턴은 최대 20개, 사용자 text는 턴당 1~4,000자, 사용자·assistant 대화 누계는 40,000자, assistant 자연어는 턴당 최대 12,000자다.
 
 일반 질문은 첫 Gemini structured 호출의 답변을 사용한다. 공고·일정 질문은 같은 호출에서 허용된 intent와 일정 기간 인자만 결정하고, 서버가 DB 도구를 종류별 최대 한 번 실행한 뒤 두 번째 Gemini 호출로 코칭 문장만 만든다. 모델은 SQL, 사용자 ID, 임의 도구를 지정할 수 없다.
@@ -696,7 +699,7 @@ DB 사실은 `tool_results`와 `assistant_message`의 canonical fact block으로
 
 #### POST /assistant/sessions
 
-완료 프로필 snapshot과 24시간 절대 만료 시각을 가진 상담을 시작한다.
+완료 프로필 snapshot과 24시간 절대 보관 만료 시각을 가진 상담을 시작한다. 첫 사용자 입력이 없으면 생성 45초 후 활성 상태가 종료된다.
 
 **요청**
 
@@ -718,7 +721,7 @@ DB 사실은 `tool_results`와 `assistant_message`의 canonical fact block으로
 }
 ```
 
-동일 요청 replay도 `201`이다. 완료 프로필이 없으면 `404 PROFILE_NOT_FOUND`, 활성 세션이 이미 3개면 `409 ASSISTANT_SESSION_LIMIT_REACHED`다.
+동일 요청 replay도 `201`이다. 완료 프로필이 없으면 `404 PROFILE_NOT_FOUND`, 활성 세션이 이미 6개면 `409 ASSISTANT_SESSION_LIMIT_REACHED`다.
 
 #### POST /assistant/sessions/{session_id}/messages
 
@@ -884,6 +887,7 @@ DB 사실은 `tool_results`와 `assistant_message`의 canonical fact block으로
 - DB commit이 실패하면 Redis 원문 세션을 유지한다. commit 후 Redis 정리만 실패해도 저장된 보고서를 성공 반환하고, 재시도는 DB에서 복구해 Gemini를 다시 호출하지 않는다.
 - timeout, network error 또는 DB/Redis `503`에서는 클라이언트가 revision을 증가시키지 않고 동일한 `request_id`, `expected_revision`, payload로 재시도한다. 이미 DB commit이 끝난 요청이면 request/session durable replay가 같은 전체 보고서를 반환한다.
 - 사용자 메시지가 없으면 `409 ASSISTANT_REPORT_EMPTY`다. 종료된 세션의 새 메시지는 `409 ASSISTANT_ALREADY_FINALIZED`다. 만료된 미종료 상담은 보고서를 자동 생성하지 않는다.
+- `finalize`는 보고서 DB 저장 직전에 활성 상태를 다시 검증한다. 유휴 기한 전에 이 검증을 통과한 종료 요청은 durable 저장 중 기한이 지나더라도 완료되며, 이후 Redis 정리는 best-effort로 처리한다.
 - 보고서 조회/list API는 제공하지 않는다. finalize 응답과 동일 요청 또는 동일 세션의 durable replay만 지원한다.
 
 **DB 배포 계약**
@@ -1620,10 +1624,10 @@ body는 `{"status":"pending"}` 또는 `{"status":"completed"}`만 허용한다. 
 | 409 | `IDEMPOTENCY_KEY_REUSED` | - | request_id 재사용(payload 다름) |
 | 409 | `ONBOARDING_REVISION_CONFLICT` | - | confirm revision 불일치 |
 | 409 | `ONBOARDING_SNAPSHOT_CONFLICT` | - | request_id에 다른 snapshot 저장됨 |
-| 409 | `ASSISTANT_SESSION_EXPIRED` | - | 코치 세션 없음·만료·타 사용자 소유 |
+| 409 | `ASSISTANT_SESSION_EXPIRED` | - | 코치 세션 없음·24시간 절대 만료·45초 유휴 종료·타 사용자 소유 |
 | 409 | `ASSISTANT_SESSION_BUSY` | ✅ | 같은 코치 세션의 이전 요청 처리 중 |
 | 409 | `ASSISTANT_REVISION_CONFLICT` | - | `expected_revision`이 최신 revision과 불일치 |
-| 409 | `ASSISTANT_SESSION_LIMIT_REACHED` | - | 사용자당 활성 코치 세션 3개 초과 |
+| 409 | `ASSISTANT_SESSION_LIMIT_REACHED` | - | 사용자당 활성 코치 세션 6개 초과 |
 | 409 | `ASSISTANT_ALREADY_FINALIZED` | - | 종료된 코치 세션에 새 메시지 전송 |
 | 409 | `ASSISTANT_REPORT_EMPTY` | - | 사용자 턴이 없는 코치 상담 종료 요청 |
 | 422 | `VALIDATION_ERROR` | - | FastAPI 요청 스키마 위반 (`details.errors` 포함) |
@@ -1684,8 +1688,9 @@ body는 `{"status":"pending"}` 또는 `{"status":"completed"}`만 허용한다. 
 | 멱등성 캐시 | 세션당 최근 64개 request_id | 같은 request_id+같은 payload면 저장된 응답 재사용 |
 | 세션 잠금 | Gemini 타임아웃×최대시도×2+30초 | 잠금 중 요청은 409 (retryable) |
 | Gemini 호출 | 최대 2회 시도 (repair 1회 포함) | `GEMINI_MAX_ATTEMPTS`, 타임아웃 15초 |
-| 코치 활성 세션 | 사용자당 최대 3개 | 종료 tombstone은 활성 세션 수에서 제외 |
-| 코치 세션 TTL | 생성 시점 기준 절대 24시간 | 활동으로 연장되지 않으며 만료 시 자동 보고서 없음 |
+| 코치 활성 세션 | 사용자당 최대 6개 | 종료·45초 유휴 만료 세션은 활성 세션 수에서 제외 |
+| 코치 유휴 기한 | 생성 또는 마지막 사용자 입력 접수 후 45초 | 입력 접수 시 갱신, 정확한 경계부터 새 요청 거절, 자동 보고서 없음 |
+| 코치 데이터 보관 상한 | 생성 시점 기준 절대 24시간 | 응답 `expires_at`, 원문·멱등 데이터 상한이며 활동으로 연장되지 않음 |
 | 코치 사용자 턴 | 세션당 최대 20개 | 성공한 메시지만 revision과 턴 수 증가 |
 | 코치 대화 누계 | 40,000자 | 사용자 text와 assistant_message 합계 |
 | 코치 응답 길이 | 턴당 최대 12,000자 | 초과 시 `ASSISTANT_RESPONSE_TOO_LONG` |

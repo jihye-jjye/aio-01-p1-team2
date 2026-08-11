@@ -45,7 +45,7 @@ class AssistantRevisionConflictError(AssistantDomainError):
 class AssistantSessionLimitReachedError(AssistantDomainError):
     status_code = 409
     code = "ASSISTANT_SESSION_LIMIT_REACHED"
-    default_message = "동시에 유지할 수 있는 상담 세션은 최대 3개입니다."
+    default_message = "동시에 유지할 수 있는 상담 세션은 최대 6개입니다."
 
 
 class IdempotencyKeyReusedError(AssistantDomainError):
