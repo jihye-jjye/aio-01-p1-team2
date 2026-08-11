@@ -12,9 +12,11 @@ def init_state():
 
 def login(login_id:str, login_pwd:str) -> dict:
     try:
-        payload = {"login_id" : login_id, "login_pw" : login_pwd}
+        payload = {"login_id" : login_id, "password" : login_pwd}
         result = login_process(payload)
+        print(f"login result : {result}")
         if result["access_token"] is not None:
+            print("accesstoken cofirm")
             st.session_state.user_id  = login_id
             st.session_state.access_token = result["access_token"]            
         return result
@@ -26,6 +28,6 @@ def logout() -> None:
     st.session_state.user_id = ""
 
 def is_logged_in() -> bool:
-    return True
-    # return bool(st.session_state.access_token)
+    # return True
+    return bool(st.session_state.access_token)
 

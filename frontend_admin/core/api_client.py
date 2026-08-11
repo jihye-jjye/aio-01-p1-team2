@@ -3,6 +3,7 @@
 import os
 import httpx
 from typing import Any
+import streamlit as st
 
 # BACKEND_URL = "http://127.0.0.1:8000"
 BACKEND_USER_URL = "http://192.100.200.209:8010/api/v1" # 사용자 서버
@@ -19,20 +20,29 @@ def request(method: str,
             data: dict[str, Any] | None = None, # ex. name, price, desc를 가지고 있는것이고            
             files: dict[str, Any] | None = None, # ex. image 파일,
             params: dict[str, Any] | None = None,
-            role : str | None = None
-            ):
+            role : str | None = None,
+            auth_required: bool = True,  # 기본값: 인증 필요
+             ):
     try:
+        headers = {}
+
         if role =="ADMIN":
             BACKEND_URL = BACKEND_AMDIN_URL
         else :
             BACKEND_URL = BACKEND_USER_URL
+
+        if auth_required:
+            token = st.session_state.access_token
+            headers["Authorization"] = f"Bearer {token}"
+
         response = httpx.request(
             method,
             f"{BACKEND_URL}{path}",
             json=json,
             data=data,
             files=files,        
-            params=params,    
+            params=params,  
+            headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
     except httpx.TimeoutException as error:

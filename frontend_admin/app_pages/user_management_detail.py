@@ -30,10 +30,8 @@ try:
     profile_tab, quest_tab, last_login_tab,  = st.tabs(["프로필", "퀘스트 진행", "접속기록"])
     
     with profile_tab:
-        st.write("profile info")
         show_profile(profile_info)
     with quest_tab:
-        st.write("quest info")
         show_quest(quest_info)
     with last_login_tab:
         st.write("last login info")
