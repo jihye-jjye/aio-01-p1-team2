@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from app.core.jwt import (
     TokenValidationError,
+    decode_admin_access_token,
     decode_access_token,
 )
 from app.core.supabase_config import get_supabase
@@ -34,6 +35,16 @@ class CurrentUser(BaseModel):
     locked_until: datetime | None = None
 
 
+class CurrentAdmin(BaseModel):
+    """인증된 관리자의 최소 계정 정보."""
+
+    id: UUID
+    login_id: str
+    role: Literal["admin"]
+    is_active: bool
+    locked_until: datetime | None = None
+
+
 def _authentication_error(message: str = "인증이 필요합니다.") -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -49,6 +60,15 @@ def _decode_access_token(token: str) -> UUID:
         raise
     except TokenValidationError as exc:
         raise _authentication_error("유효하지 않거나 만료된 토큰입니다.") from exc
+
+
+def _decode_admin_token(token: str) -> UUID:
+    try:
+        return decode_admin_access_token(token)
+    except RuntimeError:
+        raise
+    except TokenValidationError as exc:
+        raise _authentication_error("유효하지 않거나 만료된 관리자 토큰입니다.") from exc
 
 
 def _get_user(user_id: UUID) -> CurrentUser | None:
@@ -108,3 +128,37 @@ def get_current_user(
             )
 
     return user
+
+
+def get_current_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(
+        bearer_scheme
+    ),
+) -> CurrentAdmin:
+    """관리자 JWT와 현재 DB의 관리자 권한을 모두 검증한다."""
+
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise _authentication_error()
+
+    admin_id = _decode_admin_token(credentials.credentials)
+    user = _get_user(admin_id)
+
+    if user is None or user.role != "admin":
+        raise _authentication_error("관리자 권한이 없습니다.")
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="비활성화된 관리자 계정입니다.",
+        )
+
+    if user.locked_until is not None:
+        locked_until = user.locked_until
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+        if locked_until > datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="잠긴 관리자 계정입니다.",
+            )
+
+    return CurrentAdmin.model_validate(user.model_dump())

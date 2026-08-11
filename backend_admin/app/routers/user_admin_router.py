@@ -3,8 +3,9 @@
 from typing import Annotated, NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
+from app.core.dependencies import get_current_admin
 from app.schemas.user_admin_schema import (
     AdminUserDetail,
     AdminUserListResponse,
@@ -24,6 +25,7 @@ from app.services.user_admin_service import UserAdminService
 user_admin_router = APIRouter(
     prefix="/api/v1/admin/users",
     tags=["User Admin"],
+    dependencies=[Depends(get_current_admin)],
 )
 user_admin_service = UserAdminService()
 LoginIdPath = Annotated[

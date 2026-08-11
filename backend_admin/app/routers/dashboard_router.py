@@ -2,8 +2,9 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.dependencies import get_current_admin
 from app.schemas.dashboard_schema import AdminDashboardResponse
 from app.services.dashboard_service import DashboardService
 from app.services.exceptions import DashboardStorageError
@@ -12,6 +13,7 @@ from app.services.exceptions import DashboardStorageError
 dashboard_router = APIRouter(
     prefix="/api/v1/admin/dashboard",
     tags=["Admin Dashboard"],
+    dependencies=[Depends(get_current_admin)],
 )
 dashboard_service = DashboardService()
 

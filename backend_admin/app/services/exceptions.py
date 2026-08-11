@@ -43,3 +43,19 @@ class NoticeStorageError(ServiceError):
 
 class DashboardStorageError(ServiceError):
     """관리자 대시보드 집계 작업이 실패했다."""
+
+
+class SavedJobStorageError(ServiceError):
+    """저장된 취업 공고 조회 작업이 실패했다."""
+
+
+class AdminAuthenticationError(ServiceError):
+    """관리자 아이디, 비밀번호 또는 역할 검증 실패."""
+
+
+class AdminAccountDisabledError(ServiceError):
+    """관리자 계정이 비활성화됐거나 잠겨 있다."""
+
+
+class AdminAuthStorageError(ServiceError):
+    """관리자 인증 저장소 또는 토큰 처리 실패."""

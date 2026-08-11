@@ -3,8 +3,9 @@
 from typing import Annotated, NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.dependencies import get_current_admin
 from app.schemas.notice_schema import (
     NoticeCreate,
     NoticeListResponse,
@@ -19,6 +20,7 @@ from app.services.notice_service import NoticeService
 admin_notice_router = APIRouter(
     prefix="/api/v1/admin/notices",
     tags=["Notice Admin"],
+    dependencies=[Depends(get_current_admin)],
 )
 notice_service = NoticeService()
 
