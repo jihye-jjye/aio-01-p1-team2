@@ -3,6 +3,7 @@ from core.api_client import BackendAPIError, request
 from clients.user_client import user_get_detail_process, user_get_overview_process
 from tab_pages.data.profile_tab import show_profile
 from tab_pages.data.quest_tab import show_quest
+from core.datetime_format import format_created_at
 
 if st.button("←뒤로 가기"):
     st.switch_page("app_pages/user_management.py")
@@ -35,7 +36,8 @@ try:
     with quest_tab:
         show_quest(quest_info)
     with last_login_tab:
-        st.write("last login info")
+       datetime_format = format_created_at(response["last_login_at"])
+       st.title(f"마지막 접속일 : {datetime_format}")
     
 
 except BackendAPIError as error :
