@@ -148,8 +148,8 @@ active plan에 속한 progress task 상태를 `pending` 또는 `completed`로 �
 - `completed` task를 다시 `pending`으로 되돌릴 수 있습니다.
 - 같은 목표 상태를 재요청하면 기존 `completed_at`을 보존해 멱등 반환합니다.
 - 다른 상태로 변경하는 요청은 active plan에서만 허용됩니다.
-- 해당 날짜의 모든 task가 완료되는 전이에만 `+10 EXP`, 달성이 취소되는 전이에만
-  `-10 EXP`를 반영하며 과거·오늘·미래 날짜를 동일하게 처리합니다.
+- 해당 날짜의 모든 task가 완료되는 전이에만 `+20 EXP`, 달성이 취소되는 전이에만
+  `-20 EXP`를 반영하며 과거·오늘·미래 날짜를 동일하게 처리합니다.
 - 성공 응답에는 변경된 task, plan/day progress, 일별 달성 상태, 이번 `exp_delta`와
   최신 누적 `user_exp`가 포함됩니다.
 - 모든 task가 완료되어도 plan은 자동 종료되지 않으며 별도 complete 요청이 필요합니다.

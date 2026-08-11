@@ -15,6 +15,7 @@ from app.plans.records import (
     StoredPlan,
     StoredPlanProposal,
     StoredTaskUpdate,
+    TodayQuestSnapshot,
 )
 
 
@@ -172,7 +173,7 @@ class PlanDayView(StrictPlanModel):
     total_task_count: int
     achieved: bool
     achieved_at: datetime | None
-    earned_exp: Literal[0, 10]
+    earned_exp: Literal[0, 20]
 
 
 class PlanView(StrictPlanModel):
@@ -219,8 +220,23 @@ class TaskUpdateView(PlanTaskView):
     day_total_task_count: int
     achieved: bool
     achieved_at: datetime | None
-    earned_exp: Literal[0, 10]
-    exp_delta: Literal[-10, 0, 10]
+    earned_exp: Literal[0, 20]
+    exp_delta: Literal[-20, 0, 20]
+    user_exp: int
+
+
+class TodayQuestView(StrictPlanModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    plan_id: UUID | None
+    plan_title: str | None
+    quests: list[PlanTaskView]
+    completed_count: int
+    total_count: int
+    percent: int
+    achieved: bool
+    earned_exp: Literal[0, 20]
     user_exp: int
 
 
@@ -467,7 +483,7 @@ def build_task_update_view(update: StoredTaskUpdate) -> TaskUpdateView:
         or update.day_total_task_count <= 0
         or not 0 <= update.day_completed_task_count <= update.day_total_task_count
         or update.achieved != (update.day_completed_task_count == update.day_total_task_count)
-        or update.earned_exp != (10 if update.achieved else 0)
+        or update.earned_exp != (20 if update.achieved else 0)
         or (update.achieved_at is not None) != update.achieved
     ):
         raise PlanDataIntegrityError()
@@ -483,6 +499,77 @@ def build_task_update_view(update: StoredTaskUpdate) -> TaskUpdateView:
         earned_exp=update.earned_exp,
         exp_delta=update.exp_delta,
         user_exp=update.user_exp,
+    )
+
+
+def build_today_quest_view(snapshot: TodayQuestSnapshot) -> TodayQuestView:
+    if (snapshot.plan_id is None) != (snapshot.plan_title is None):
+        raise PlanDataIntegrityError()
+    if snapshot.plan_id is None:
+        if snapshot.tasks or snapshot.achievement is not None:
+            raise PlanDataIntegrityError()
+        return TodayQuestView(
+            date=snapshot.date,
+            plan_id=None,
+            plan_title=None,
+            quests=[],
+            completed_count=0,
+            total_count=0,
+            percent=0,
+            achieved=False,
+            earned_exp=0,
+            user_exp=snapshot.user_exp,
+        )
+    if not snapshot.tasks:
+        if snapshot.achievement is not None:
+            raise PlanDataIntegrityError()
+        return TodayQuestView(
+            date=snapshot.date,
+            plan_id=snapshot.plan_id,
+            plan_title=snapshot.plan_title,
+            quests=[],
+            completed_count=0,
+            total_count=0,
+            percent=0,
+            achieved=False,
+            earned_exp=0,
+            user_exp=snapshot.user_exp,
+        )
+    quests = [_task_view(item, expected_date=snapshot.date) for item in snapshot.tasks]
+    achievement = snapshot.achievement
+    plan_days = {item.plan_day for item in quests}
+    if (
+        achievement is None
+        or achievement.plan_id != snapshot.plan_id
+        or achievement.goal_date != snapshot.date
+        or plan_days != {achievement.plan_day}
+    ):
+        raise PlanDataIntegrityError()
+    completed = sum(item.status == "completed" for item in quests)
+    total = len(quests)
+    achieved = completed == total
+    achieved_at = (
+        max(item.completed_at for item in quests if item.completed_at is not None)
+        if achieved
+        else None
+    )
+    if (
+        achievement.achieved != achieved
+        or achievement.achieved_at != achieved_at
+        or achievement.exp_awarded != (20 if achieved else 0)
+    ):
+        raise PlanDataIntegrityError()
+    return TodayQuestView(
+        date=snapshot.date,
+        plan_id=snapshot.plan_id,
+        plan_title=snapshot.plan_title,
+        quests=quests,
+        completed_count=completed,
+        total_count=total,
+        percent=completed * 100 // total,
+        achieved=achievement.achieved,
+        earned_exp=achievement.exp_awarded,
+        user_exp=snapshot.user_exp,
     )
 
 
@@ -516,7 +603,7 @@ def _validated_daily_achievements(
         if (
             achievement.achieved != achieved
             or achievement.achieved_at != achieved_at
-            or achievement.exp_awarded != (10 if achieved else 0)
+            or achievement.exp_awarded != (20 if achieved else 0)
         ):
             raise PlanDataIntegrityError()
     return by_day

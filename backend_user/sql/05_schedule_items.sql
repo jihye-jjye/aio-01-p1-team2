@@ -27,9 +27,9 @@ create table if not exists app.schedule_items (
     foreign key (user_id, plan_id)
     references app.plans (user_id, id)
     on delete restrict,
-  constraint schedule_items_saved_job_owner_fkey
-    foreign key (user_id, saved_job_id)
-    references app.saved_jobs (user_id, id)
+  constraint schedule_items_saved_job_fkey
+    foreign key (saved_job_id)
+    references app.saved_jobs (id)
     on delete restrict,
   constraint schedule_items_kind_check
     check (kind in ('milestone', 'task', 'interview')),
@@ -88,7 +88,7 @@ create index if not exists schedule_items_plan_idx
   where plan_id is not null;
 
 create index if not exists schedule_items_saved_job_idx
-  on app.schedule_items (user_id, saved_job_id)
+  on app.schedule_items (saved_job_id, user_id)
   where saved_job_id is not null;
 
 create index if not exists schedule_items_open_schedule_idx

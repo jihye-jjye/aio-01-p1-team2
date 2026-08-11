@@ -27,8 +27,11 @@ class ApiPort(Protocol):
     async def signup(self, login_id: str, login_pw: str, user_name: str) -> str: ...
     async def login(self, login_id: str, login_pw: str) -> None: ...
     async def profile(self) -> dict[str, Any]: ...
+    async def saved_jobs(self) -> list[dict[str, Any]]: ...
+    async def saved_job_recommendation(self) -> dict[str, Any] | None: ...
     async def start(self) -> dict[str, Any]: ...
     async def message(self, session_id: str, text: str) -> dict[str, Any]: ...
+    async def onboarding_result(self, session_id: str) -> dict[str, Any]: ...
     async def confirm(self, session_id: str, revision: int) -> dict[str, Any]: ...
     async def restart(self, session_id: str) -> dict[str, Any]: ...
     async def create_plan_proposal(self, request_id: str) -> dict[str, Any]: ...
@@ -51,6 +54,13 @@ class ApiPort(Protocol):
         status: Literal["pending", "completed"],
     ) -> dict[str, Any]: ...
     async def complete_plan(self, plan_id: str) -> dict[str, Any]: ...
+    async def notices(self) -> list[dict[str, Any]]: ...
+    async def today_quests(self) -> dict[str, Any]: ...
+    async def set_today_quest_status(
+        self,
+        task_id: str,
+        status: Literal["pending", "completed"],
+    ) -> dict[str, Any]: ...
     def clear_access_token(self) -> None: ...
     async def aclose(self) -> None: ...
 
@@ -73,6 +83,11 @@ class RendererPort(Protocol):
     def success(self, profile: dict[str, Any]) -> None: ...
     def main_menu(self) -> None: ...
     def main_menu_help(self) -> None: ...
+    def saved_jobs(self, saved_jobs: list[dict[str, Any]]) -> None: ...
+    def saved_job_recommendation(self, recommendation: dict[str, Any] | None) -> None: ...
+    def notices(self, notices: list[dict[str, Any]]) -> None: ...
+    def today_quests(self, view: dict[str, Any]) -> None: ...
+    def today_quest_help(self) -> None: ...
     def proposal(self, proposal: dict[str, Any]) -> None: ...
     def proposal_help(self) -> None: ...
     def plan(self, plan: dict[str, Any], *, task_numbers: dict[str, int]) -> None: ...
@@ -304,6 +319,26 @@ class CliApp:
                     return result
                 continue
             if choice == "4":
+                result = await self._today_quests_entry()
+                if isinstance(result, (int, ReloginRequired)):
+                    return result
+                continue
+            if choice == "5":
+                result = await self._saved_jobs_entry()
+                if isinstance(result, ReloginRequired):
+                    return result
+                continue
+            if choice == "6":
+                result = await self._recommend_saved_job_entry()
+                if isinstance(result, ReloginRequired):
+                    return result
+                continue
+            if choice == "7":
+                result = await self._notices_entry()
+                if isinstance(result, ReloginRequired):
+                    return result
+                continue
+            if choice == "8":
                 result = await self._reonboard()
                 if isinstance(result, ProfileReady):
                     profile = result.profile
@@ -311,10 +346,111 @@ class CliApp:
                 if isinstance(result, (int, ReloginRequired)):
                     return result
                 continue
-            if choice == "5":
+            if choice == "9":
                 self._proposal_request_id = None
                 return SwitchAccount()
             self.renderer.main_menu_help()
+
+    async def _saved_jobs_entry(self) -> ReloginRequired | None:
+        try:
+            with self.renderer.status("채용 공고 조회 중..."):
+                saved_jobs = await self.api.saved_jobs()
+        except ApiError as exc:
+            self.renderer.error(_friendly_error(exc))
+            if _requires_login(exc):
+                return ReloginRequired()
+            return None
+        self.renderer.saved_jobs(saved_jobs)
+        return None
+
+    async def _notices_entry(self) -> ReloginRequired | None:
+        try:
+            with self.renderer.status("공지 사항 조회 중..."):
+                notices = await self.api.notices()
+        except ApiError as exc:
+            self.renderer.error(_friendly_error(exc))
+            if _requires_login(exc):
+                return ReloginRequired()
+            return None
+        self.renderer.notices(notices)
+        return None
+
+    async def _today_quests_entry(self) -> int | ReloginRequired | None:
+        try:
+            with self.renderer.status("오늘 퀘스트 조회 중..."):
+                view = await self.api.today_quests()
+        except ApiError as exc:
+            self.renderer.error(_friendly_error(exc))
+            if _requires_login(exc):
+                return ReloginRequired()
+            return None
+        if not isinstance(view, dict) or view.get("plan_id") is None:
+            self.renderer.today_quests(view if isinstance(view, dict) else {})
+            return None
+        return await self._today_quest_state(view)
+
+    async def _today_quest_state(self, view: dict[str, Any]) -> int | ReloginRequired | None:
+        task_selections = _today_quest_selections(view)
+        self.renderer.today_quests(view)
+        while True:
+            command = (await self.input.read("오늘 퀘스트> ")).strip()
+            if command == "/quit":
+                return 0
+            if command == "/back":
+                return None
+            if command == "/help":
+                self.renderer.today_quest_help()
+                continue
+
+            task_update = _task_status_command(command)
+            if task_update is None:
+                self.renderer.today_quest_help()
+                continue
+            number, status = task_update
+            task_id = task_selections.get(number)
+            if task_id is None:
+                self.renderer.error("현재 화면의 과제 번호를 입력해주세요.")
+                continue
+            try:
+                with self.renderer.status("과제 상태 변경 중..."):
+                    patch_result = await self.api.set_today_quest_status(str(task_id), status)
+            except ApiError as exc:
+                self.renderer.error(_friendly_error(exc))
+                if _requires_login(exc):
+                    return ReloginRequired()
+                continue
+
+            try:
+                with self.renderer.status("오늘 퀘스트 다시 조회 중..."):
+                    refreshed = await self.api.today_quests()
+            except ApiError as exc:
+                self.renderer.error(_friendly_error(exc))
+                if _requires_login(exc):
+                    return ReloginRequired()
+                self.renderer.error(
+                    "과제 상태는 변경됐지만 오늘 퀘스트를 다시 조회하지 못했습니다. "
+                    "다시 조회해주세요."
+                )
+                continue
+            if not isinstance(refreshed, dict) or refreshed.get("plan_id") is None:
+                self.renderer.error(
+                    "과제 상태는 변경됐지만 활성 계획이 사라져 오늘 퀘스트를 표시할 수 없습니다."
+                )
+                return None
+            view = refreshed
+            task_selections = _today_quest_selections(view)
+            self.renderer.today_quests(view)
+            if _today_quest_update_matches_view(patch_result, view):
+                exp_delta = patch_result.get("exp_delta")
+                user_exp = patch_result.get("user_exp")
+                if exp_delta == 20:
+                    self.renderer.notice(f"일일 목표 달성 · +20 EXP · 누적 {user_exp} EXP")
+                elif exp_delta == -20:
+                    self.renderer.notice(f"일일 목표 달성 취소 · -20 EXP · 누적 {user_exp} EXP")
+            else:
+                self.renderer.error(
+                    "과제 변경 결과를 검증하지 못했습니다. 표시된 최신 오늘 퀘스트를 확인해주세요."
+                )
 
     async def _proposal_entry(self) -> int | ReloginRequired | None:
         try:
@@ -560,10 +696,10 @@ class CliApp:
                 if _task_update_matches_plan(patch_result, plan):
                     exp_delta = patch_result.get("exp_delta")
                     user_exp = patch_result.get("user_exp")
-                    if exp_delta == 10:
-                        self.renderer.notice(f"일일 목표 달성 · +10 EXP · 누적 {user_exp} EXP")
-                    elif exp_delta == -10:
-                        self.renderer.notice(f"일일 목표 달성 취소 · -10 EXP · 누적 {user_exp} EXP")
+                    if exp_delta == 20:
+                        self.renderer.notice(f"일일 목표 달성 · +20 EXP · 누적 {user_exp} EXP")
+                    elif exp_delta == -20:
+                        self.renderer.notice(f"일일 목표 달성 취소 · -20 EXP · 누적 {user_exp} EXP")
                 else:
                     self.renderer.error(
                         "과제 변경 결과를 검증하지 못했습니다. 표시된 최신 계획을 확인해주세요."
@@ -813,13 +949,42 @@ class CliApp:
         self, response: dict[str, Any]
     ) -> int | ReloginRequired | ProfileReady | None:
         review_payload = deepcopy(response.get("payload") or {})
+        session_id = str(response["session_id"])
         try:
-            revision = int(review_payload["draft_revision"])
-            with self.renderer.status("review 저장 및 검증 중..."):
-                completed = await self.api.confirm(str(response["session_id"]), revision)
-        except (KeyError, TypeError, ValueError):
+            with self.renderer.status("서버 review snapshot 조회 중..."):
+                server_review = await self.api.onboarding_result(session_id)
+        except (KeyError, TypeError):
+            self.renderer.error("온보딩 세션 식별자를 확인할 수 없습니다.")
+            return None
+        except ApiError as exc:
+            if _requires_login(exc):
+                self.renderer.error(_friendly_error(exc))
+                return ReloginRequired()
+            self.renderer.error(_friendly_error(exc))
+            return None
+
+        server_payload = server_review.get("payload") if isinstance(server_review, dict) else None
+        server_revision_value = server_payload.get("draft_revision") if server_payload else None
+        try:
+            revision = int(server_revision_value)
+        except (TypeError, ValueError):
+            self.renderer.error("서버 review snapshot의 revision을 확인할 수 없습니다.")
+            return None
+
+        displayed_revision = review_payload.get("draft_revision")
+        try:
+            if displayed_revision is not None and int(displayed_revision) != revision:
+                self.renderer.error(
+                    "표시된 review가 서버 snapshot과 다릅니다. 최신 review를 다시 확인해주세요."
+                )
+                return None
+        except (TypeError, ValueError):
             self.renderer.error("표시된 review revision을 확인할 수 없습니다.")
             return None
+
+        try:
+            with self.renderer.status("review 저장 및 검증 중..."):
+                completed = await self.api.confirm(session_id, revision)
         except ApiError as exc:
             if _requires_login(exc):
                 self.renderer.error(_friendly_error(exc))
@@ -853,12 +1018,20 @@ class CliApp:
                     else:
                         if _pending_matches_profile(pending, profile):
                             self.renderer.success(profile)
+                            recommendation_result = (
+                                await self._recommend_saved_job_entry()
+                            )
+                            if isinstance(recommendation_result, ReloginRequired):
+                                return ReloginRequired(pending)
                             return ProfileReady(profile)
                         self.renderer.error(
                             "저장 결과를 검증하지 못했습니다. 저장된 프로필을 다시 조회해주세요."
                         )
                 elif _pending_matches_profile(pending, profile):
                     self.renderer.success(profile)
+                    recommendation_result = await self._recommend_saved_job_entry()
+                    if isinstance(recommendation_result, ReloginRequired):
+                        return ReloginRequired(pending)
                     return ProfileReady(profile)
                 else:
                     self.renderer.error(
@@ -874,6 +1047,18 @@ class CliApp:
                 verify_now = True
                 continue
             self.renderer.verification_help()
+
+    async def _recommend_saved_job_entry(self) -> ReloginRequired | None:
+        try:
+            with self.renderer.status("희망 환경 맞춤 공고 추천 중..."):
+                recommendation = await self.api.saved_job_recommendation()
+        except ApiError as exc:
+            self.renderer.error(_friendly_error(exc))
+            if _requires_login(exc):
+                return ReloginRequired()
+            return None
+        self.renderer.saved_job_recommendation(recommendation)
+        return None
 
 
 def _is_not_found(exc: ApiError, code: str) -> bool:
@@ -982,6 +1167,54 @@ def _renderer_task_numbers(selections: dict[int, UUID]) -> dict[str, int]:
     return {str(task_id): number for number, task_id in selections.items()}
 
 
+def _today_quest_selections(view: dict[str, Any]) -> dict[int, UUID]:
+    selections: dict[int, UUID] = {}
+    quests = view.get("quests")
+    if not isinstance(quests, list):
+        return selections
+    for task in quests:
+        if not isinstance(task, dict):
+            continue
+        task_id = task.get("id")
+        if not isinstance(task_id, str):
+            continue
+        try:
+            parsed_task_id = UUID(task_id)
+        except ValueError:
+            continue
+        if str(parsed_task_id) != task_id or parsed_task_id in selections.values():
+            continue
+        selections[len(selections) + 1] = parsed_task_id
+    return selections
+
+
+def _today_quest_update_matches_view(update: dict[str, Any], view: dict[str, Any]) -> bool:
+    task_id = update.get("id")
+    if (
+        not _is_canonical_uuid(task_id)
+        or view.get("completed_count") != update.get("completed_task_count")
+        or view.get("total_count") != update.get("total_task_count")
+        or view.get("percent") != update.get("percent")
+        or view.get("achieved") is not update.get("achieved")
+        or view.get("earned_exp") != update.get("earned_exp")
+        or view.get("user_exp") != update.get("user_exp")
+    ):
+        return False
+    quests = view.get("quests")
+    if not isinstance(quests, list):
+        return False
+    for task in quests:
+        if not isinstance(task, dict) or task.get("id") != task_id:
+            continue
+        return bool(
+            task.get("plan_day") == update.get("plan_day")
+            and task.get("date") == update.get("date")
+            and task.get("status") == update.get("status")
+            and task.get("completed_at") == update.get("completed_at")
+        )
+    return False
+
+
 def _task_update_matches_plan(update: dict[str, Any], plan: dict[str, Any]) -> bool:
     task_id = update.get("id")
     plan_day = update.get("plan_day")
@@ -992,7 +1225,7 @@ def _task_update_matches_plan(update: dict[str, Any], plan: dict[str, Any]) -> b
         or type(plan_day) is not int
         or plan_day <= 0
         or type(exp_delta) is not int
-        or exp_delta not in (-10, 0, 10)
+        or exp_delta not in (-20, 0, 20)
         or type(user_exp) is not int
         or user_exp < 0
         or plan.get("user_exp") != user_exp
@@ -1116,8 +1349,10 @@ def _friendly_error(
         "PLAN_NOT_COMPLETE": "완료하지 않은 과제가 있습니다. 모든 과제를 완료한 뒤 다시 시도해주세요.",
         "PLAN_WINDOW_OUT_OF_RANGE": "요청한 날짜는 로드맵 기간 밖입니다.",
         "PLAN_DATA_INTEGRITY_ERROR": "로드맵 데이터를 검증하지 못했습니다.",
+        "TODAY_QUEST_NOT_FOUND": "오늘 퀘스트에서 해당 과제를 찾을 수 없습니다.",
         "CLIENT_TIMEOUT": "서버 응답 시간이 초과되었습니다. 다시 시도해주세요.",
         "CLIENT_NETWORK_ERROR": "서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.",
+        "INVALID_RESPONSE": "서버 응답 형식을 확인할 수 없습니다. 다시 시도해주세요.",
     }
     return messages.get(exc.code, "요청을 처리하지 못했습니다. 다시 시도해주세요.")
 

@@ -34,24 +34,38 @@ create table if not exists app.daily_goal_achievements (
     references app.plans (user_id, id)
     on delete cascade,
   constraint daily_goal_achievements_plan_day_check
-    check (plan_day > 0),
-  constraint daily_goal_achievements_exp_awarded_check
-    check (exp_awarded in (0, 10)),
-  constraint daily_goal_achievements_state_check
-    check (
-      (
-        achieved = true
-        and achieved_at is not null
-        and exp_awarded = 10
-      )
-      or
-      (
-        achieved = false
-        and achieved_at is null
-        and exp_awarded = 0
-      )
-    )
+    check (plan_day > 0)
 );
+
+alter table app.daily_goal_achievements
+  drop constraint if exists daily_goal_achievements_exp_awarded_check;
+
+alter table app.daily_goal_achievements
+  drop constraint if exists daily_goal_achievements_state_check;
+
+update app.daily_goal_achievements
+set exp_awarded = 20
+where exp_awarded = 10;
+
+alter table app.daily_goal_achievements
+  add constraint daily_goal_achievements_exp_awarded_check
+  check (exp_awarded in (0, 20));
+
+alter table app.daily_goal_achievements
+  add constraint daily_goal_achievements_state_check
+  check (
+    (
+      achieved = true
+      and achieved_at is not null
+      and exp_awarded = 20
+    )
+    or
+    (
+      achieved = false
+      and achieved_at is null
+      and exp_awarded = 0
+    )
+  );
 
 create index if not exists daily_goal_achievements_user_goal_date_idx
   on app.daily_goal_achievements (user_id, goal_date desc);
@@ -111,7 +125,7 @@ select
   goal_date,
   achieved,
   case when achieved then last_completed_at else null end,
-  case when achieved then 10 else 0 end
+  case when achieved then 20 else 0 end
 from per_day
 on conflict (user_id, plan_id, plan_day) do update
 set goal_date = excluded.goal_date,
