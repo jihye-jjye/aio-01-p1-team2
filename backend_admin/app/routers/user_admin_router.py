@@ -17,12 +17,25 @@ from app.services.exceptions import (
 )
 from app.services.user_admin_service import UserAdminService
 
+from app.schemas.user_admin_schema import AdminUserOverview
+
+
 
 user_admin_router = APIRouter(
     prefix="/api/v1/admin/users",
     tags=["User Admin"],
 )
 user_admin_service = UserAdminService()
+
+@user_admin_router.get(
+    "/{user_id}/overview",
+    response_model=AdminUserOverview,
+)
+def get_user_overview(user_id: UUID) -> AdminUserOverview:
+    try:
+        return user_admin_service.get_user_overview(user_id)
+    except (UserNotFoundError, UserAdminStorageError) as exc:
+        _raise_user_http_error(exc)
 
 
 def _raise_user_http_error(exc: Exception) -> NoReturn:

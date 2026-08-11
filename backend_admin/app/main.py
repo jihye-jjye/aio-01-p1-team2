@@ -4,7 +4,6 @@ from app.routers.admin_auth_router import admin_auth_router
 from app.routers.admin_notice_router import admin_notice_router
 from app.routers.admin_router import admin_router
 from app.routers.feedback_router import feedback_router
-from app.routers.notice_router import notice_router
 from app.routers.user_admin_router import user_admin_router
 
 
@@ -23,5 +22,4 @@ app.include_router(admin_auth_router)
 app.include_router(admin_router)
 app.include_router(user_admin_router)
 app.include_router(admin_notice_router)
-app.include_router(notice_router)
 app.include_router(feedback_router)

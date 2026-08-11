@@ -12,6 +12,19 @@ from supabase import Client
 from app.core.supabase_config import get_supabase
 from app.schemas.user_admin_schema import AdminUserQueryParams
 
+PLAN_TABLE = "plans"
+SCHEDULE_ITEM_TABLE = "schedule_items"
+
+PLAN_COLUMNS = (
+    "id,title,summary,starts_on,ends_on,total_task_count,"
+    "final_progress,status,activated_at,ended_at,created_at,updated_at"
+)
+
+QUEST_COLUMNS = (
+    "id,plan_id,kind,title,description,scheduled_at,status,"
+    "plan_day,slot,counts_toward_progress,completed_at,"
+    "created_at,updated_at"
+)
 
 APP_SCHEMA = "app"
 USER_TABLE = "user_accounts"
@@ -171,3 +184,37 @@ class UserAdminRepository:
         if not response.data:
             return None
         return response.data[0]
+
+    def get_user_plans(self, user_id: UUID) -> list[dict[str, Any]]:
+        try:
+            response = (
+            self.client.schema(APP_SCHEMA)
+            .table(PLAN_TABLE)
+            .select(PLAN_COLUMNS)
+            .eq("user_id", str(user_id))
+            .order("created_at", desc=True)
+            .execute()
+        )
+        except (APIError, httpx.HTTPError) as exc:
+            raise UserAdminRepositoryError(
+            "사용자 로드맵을 조회할 수 없습니다."
+        ) from exc
+
+        return list(response.data or [])
+
+    def get_user_quests(self, user_id: UUID) -> list[dict[str, Any]]:
+        try:
+            response = (
+            self.client.schema(APP_SCHEMA)
+            .table(SCHEDULE_ITEM_TABLE)
+            .select(QUEST_COLUMNS)
+            .eq("user_id", str(user_id))
+            .order("created_at", desc=True)
+            .execute()
+        )
+        except (APIError, httpx.HTTPError) as exc:
+            raise UserAdminRepositoryError(
+            "사용자 퀘스트를 조회할 수 없습니다."
+        ) from exc
+
+        return list(response.data or [])
