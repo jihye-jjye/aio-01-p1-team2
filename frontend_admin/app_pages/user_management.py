@@ -82,7 +82,7 @@ with st.container(border=True):
                 if st.button(
                     "수정",
                     key=f"user-edit-{item['id']}",
-                    use_container_width=True):
+                    use_container_width=True):                    
                     st.session_state.selected_item_login_id = item["login_id"]
                     # 여기서 수정 페이지 또는 수정 폼을 열기
                     st.switch_page("app_pages/user_management_detail.py")

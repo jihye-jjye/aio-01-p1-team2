@@ -7,7 +7,7 @@ from typing import Any
 # BACKEND_URL = "http://127.0.0.1:8000"
 BACKEND_USER_URL = "http://192.100.200.209:8010/api/v1" # 사용자 서버
 BACKEND_AMDIN_URL = "http://192.100.200.72:8000/api/v1" # 관리자 서버
-REQUEST_TIMEOUT = 15.0
+REQUEST_TIMEOUT = 60.0
 
 class BackendAPIError(Exception):
     """백엔드 연결 또는 API 응답 처리 중 발생한 오류입니다."""

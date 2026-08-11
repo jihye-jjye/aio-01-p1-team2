@@ -30,20 +30,20 @@ user_management_detail_page = st.Page(
     icon="🗃️",
 )
 
-select_page = st.Page(
-    "app_pages/example.py",
-    title="조회",
-    icon="🔍",
+loadmap_page = st.Page(
+    "app_pages/loadmap.py",
+    title="로드맵 관리",
+    icon="🧭",
 )
 
-chatbot_page = st.Page(
-    "app_pages/chat_example.py",
-    title="Chat",
-    icon="🤖",
+notice_page = st.Page(
+    "app_pages/notice.py",
+    title="공지사항",
+    icon="🪧",
 )
 
 navigation = st.navigation(
-    [start_page, user_management_page, user_management_detail_page, select_page, chatbot_page],
+    [start_page, user_management_page, user_management_detail_page, notice_page, loadmap_page],
     position="hidden",
 )
 
@@ -52,8 +52,8 @@ with st.sidebar:
     
     if is_logged_in():        
         st.page_link(user_management_page)
-        st.page_link(select_page)
-        st.page_link(chatbot_page)
+        st.page_link(loadmap_page)
+        st.page_link(notice_page)
         if st.button("로그아웃") :
             logout()
             st.switch_page(start_page)
