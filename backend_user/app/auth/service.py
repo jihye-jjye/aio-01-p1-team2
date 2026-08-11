@@ -33,6 +33,8 @@ class AccountRepository(Protocol):
 
     async def get_for_login(self, normalized_login_id: str) -> AccountAuthRecord | None: ...
 
+    async def get_account(self, account_id: UUID) -> AccountSummary | None: ...
+
     async def record_failed_login(self, account_id: UUID, *, now: datetime) -> None: ...
 
     async def record_successful_login(self, account_id: UUID, *, now: datetime) -> bool: ...
@@ -119,6 +121,12 @@ class AuthService:
             login_id=identity.login_id,
             **session.model_dump(),
         )
+
+    async def get_account(self, *, user_id: UUID) -> AccountSummary:
+        account = await self._accounts.get_account(user_id)
+        if account is None:
+            raise AccountNotFoundError
+        return account
 
     async def update_account(
         self,

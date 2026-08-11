@@ -3,9 +3,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response, status
 
 from app.api.dependencies import get_auth_service, get_current_user
-from app.api.errors import APIErrorEnvelope
+from app.api.errors import APIErrorEnvelope, UnauthorizedError
 from app.api.schemas import AccountUpdateRequest, LoginRequest, SignupRequest
-from app.auth.models import AccountSummary, CurrentUser, LoginResult, SignupResult
+from app.auth.errors import AccountNotFoundError
+from app.auth.models import (
+    AccountSummary,
+    CurrentAccount,
+    CurrentUser,
+    LoginResult,
+    SignupResult,
+)
 from app.auth.service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -92,16 +99,17 @@ async def login(
 
 @router.get(
     "/me",
-    response_model=CurrentUser,
+    response_model=CurrentAccount,
     summary="현재 인증 사용자 조회",
     description="""
-Bearer access token과 계정 활성 상태를 검증하고 JWT claim에 담긴 현재 사용자 정보를 반환합니다.
+Bearer access token과 계정 활성 상태를 검증하고 현재 계정 정보를 반환합니다.
 
-- PostgreSQL에서 `sub` 계정이 현재 활성 상태인지 확인한 뒤 검증된 `sub`, `role`, `sid` claim을 사용합니다.
+- PostgreSQL에서 `sub` 계정의 `login_id`, `user_name`과 활성 상태를 조회합니다.
+- `role`, `session_id`는 검증된 JWT claim을 사용합니다.
 - `id`는 사용자 UUID, `session_id`는 refresh token과 연결된 인증 세션 UUID입니다.
 - access token이 없거나 만료·위조됐거나 계정이 삭제·비활성 상태이면 인증 상태를 폐기해야 합니다.
 """,
-    response_description="JWT에서 검증한 현재 사용자와 인증 세션 정보",
+    response_description="현재 계정 정보와 인증 세션 정보",
     responses={
         401: {
             "model": APIErrorEnvelope,
@@ -109,14 +117,25 @@ Bearer access token과 계정 활성 상태를 검증하고 JWT claim에 담긴 
         },
         503: {
             "model": APIErrorEnvelope,
-            "description": "`SERVICE_UNAVAILABLE`: 계정 활성 상태 확인 중 PostgreSQL 장애",
+            "description": "`SERVICE_UNAVAILABLE`: 계정 조회 중 PostgreSQL 장애",
         },
     },
 )
 async def me(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
-) -> CurrentUser:
-    return current_user
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> CurrentAccount:
+    try:
+        account = await service.get_account(user_id=current_user.id)
+    except AccountNotFoundError as exc:
+        raise UnauthorizedError from exc
+    return CurrentAccount(
+        id=account.user_id,
+        role=current_user.role,
+        session_id=current_user.session_id,
+        login_id=account.login_id,
+        user_name=account.user_name,
+    )
 
 
 @router.patch(

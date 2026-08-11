@@ -49,3 +49,8 @@ class CurrentUser(BaseModel):
     id: UUID
     role: Role
     session_id: UUID
+
+
+class CurrentAccount(CurrentUser):
+    login_id: str
+    user_name: str

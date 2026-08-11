@@ -446,9 +446,9 @@ backend_user/
 │   │       └── profile.py          # /profile — 확정 프로필 조회
 │   ├── auth/               # 인증 도메인
 │   │   ├── errors.py       # LoginIdAlreadyExistsError
-│   │   ├── models.py       # AccountAuthRecord, CurrentUser, LoginResult
+│   │   ├── models.py       # AccountAuthRecord, CurrentUser, CurrentAccount, LoginResult
 │   │   ├── passwords.py    # Argon2 해싱/검증 (pwdlib)
-│   │   ├── service.py      # AuthService — signup/login/계정 수정·삭제
+│   │   ├── service.py      # AuthService — signup/login/계정 조회·수정·삭제
 │   │   ├── stores.py       # RedisRefreshTokenStore — refresh token TTL 저장
 │   │   └── tokens.py      # JWT access token 발급/검증
 │   ├── coach/              # 취업·커리어 코치 도메인, Redis 상태, DB 보고서
