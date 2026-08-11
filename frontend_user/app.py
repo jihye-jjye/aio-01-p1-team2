@@ -73,6 +73,16 @@ roadmap_page = st.Page(
     title="취업 로드맵",
     icon="🗺️",
 )
+today_quests_page = st.Page(
+    "app_pages/today_quests.py",
+    title="오늘 할 일",
+    icon="✅",
+)
+jobs_page = st.Page(
+    "app_pages/jobs.py",
+    title="추천 공고",
+    icon="💼",
+)
 
 # 페이지 목록 화면 이동은 각 페이지의 버튼으로 처리
 navigation = st.navigation(
@@ -85,6 +95,8 @@ navigation = st.navigation(
         assistant_page,
         profile_page,
         roadmap_page,
+        today_quests_page,
+        jobs_page,
     ],
     position="hidden",
 )
@@ -101,8 +113,9 @@ if is_logged_in():
         # 사용자 기능 페이지가 추가되면 이곳에 링크 등록
         st.page_link(profile_page, label="내 프로필", icon="👤")
         st.page_link(roadmap_page, label="취업 로드맵", icon="🗺️")
+        st.page_link(today_quests_page, label="오늘 할 일", icon="✅")
+        st.page_link(jobs_page, label="추천 공고", icon="💼")
         st.page_link(assistant_page, label="AI 상담", icon="🤖")
-        st.page_link(home_page, label="모드 변경", icon="🏠")
 
         st.divider()
         if st.button("로그아웃", use_container_width=True):

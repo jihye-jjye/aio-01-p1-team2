@@ -16,7 +16,7 @@ BACKEND_URL = os.getenv(
     "BACKEND_URL",
     "http://192.100.200.209:8010/api/v1",
 ).rstrip("/")
-REQUEST_TIMEOUT = 15.0
+REQUEST_TIMEOUT = 60.0
 
 
 class BackendAPIError(Exception):

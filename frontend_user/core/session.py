@@ -45,6 +45,8 @@ ROADMAP_STATE_KEYS = (
     "roadmap_request_id",
     "roadmap_start_on",
     "roadmap_flash",
+    "roadmap_job_updates",
+    "plan_update_preview",
 )
 
 

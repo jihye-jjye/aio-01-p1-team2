@@ -5,6 +5,7 @@ from datetime import date, time as datetime_time
 from html import escape
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from clients.auth_client import get_profile
 from clients.onboarding_client import (
@@ -97,10 +98,21 @@ def is_notification_time_question(latest: dict) -> bool:
     payload = latest.get("payload") or {}
     missing_fields = payload.get("missing_fields") or []
     question = str(latest.get("assistant_message") or "")
-    return (
-        "daily_notification_time" in missing_fields
-        and ("알림" in question or "시간" in question)
+
+    # missing_fields에는 아직 답하지 않은 뒤 단계도 함께 들어갈 수 있습니다.
+    # 따라서 단순히 "시간"이 포함됐는지 확인하지 않고, 현재 질문에
+    # 알림 시간을 뜻하는 표현이 있을 때만 입력 예시를 보여줍니다.
+    notification_words = ("알림", "리마인드", "몇 시", "몇시", "알려드릴 시간")
+    asks_notification_time = any(
+        word in question
+        for word in notification_words
     )
+
+    # 백엔드는 아직 답하지 않은 필드를 질문 순서대로 반환합니다.
+    # 목록 안에 알림 시간이 들어 있다는 것만으로는 현재 질문이라고 볼 수 없으므로,
+    # 첫 번째 미작성 필드가 알림 시간일 때만 예시를 표시합니다.
+    current_field = missing_fields[0] if missing_fields else None
+    return current_field == "daily_notification_time" and asks_notification_time
 
 
 def validate_draft_profile(draft: dict) -> list[str]:
@@ -335,6 +347,41 @@ def render_message_scroll() -> None:
                 # st.write를 사용해 사용자와 AI 문자열을 HTML로 실행하지 않습니다.
                 st.write(message["content"])
 
+    scroll_to_latest_message()
+
+
+def scroll_to_latest_message() -> None:
+    """고정 높이 채팅 영역을 가장 최근 메시지 위치로 이동합니다."""
+
+    # Streamlit 기본 컨테이너에는 자동 스크롤 기능이 없어서,
+    # 메시지 렌더링이 끝난 뒤 마지막 스크롤 영역을 아래로 이동합니다.
+    components.html(
+        """
+        <script>
+        setTimeout(() => {
+            const parentDocument = window.parent.document;
+            const wrappers = parentDocument.querySelectorAll(
+                '[data-testid="stVerticalBlockBorderWrapper"]'
+            );
+
+            for (let index = wrappers.length - 1; index >= 0; index -= 1) {
+                const elements = wrappers[index].querySelectorAll('div');
+                for (const element of elements) {
+                    const style = window.parent.getComputedStyle(element);
+                    const scrollable = ['auto', 'scroll'].includes(style.overflowY);
+                    if (scrollable && element.scrollHeight > element.clientHeight) {
+                        element.scrollTop = element.scrollHeight;
+                        return;
+                    }
+                }
+            }
+        }, 100);
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
+
 
 def render_conversation(latest: dict, message_area) -> None:
     """대화 단계의 메시지와 답변 입력 폼을 표시합니다."""
@@ -550,9 +597,13 @@ def render_completed(latest: dict, message_area) -> None:
             st.rerun()
         return
 
-    st.write("이제 사용자 홈에서 AI 취업 서비스를 이용할 수 있습니다.")
-    # 사용자 대시보드 생성 후 아래 이동을 연결합니다.
-    # st.switch_page("app_pages/user_dashboard.py")
+    st.caption("완성된 프로필을 기준으로 AI가 지금 가장 잘 맞는 공고를 찾아드려요.")
+    if st.button(
+        "추천 공고 받으러 가기 →",
+        type="primary",
+        use_container_width=True,
+    ):
+        st.switch_page("app_pages/jobs.py")
 
 
 def show_onboarding() -> None:

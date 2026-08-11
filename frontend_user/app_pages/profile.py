@@ -144,28 +144,21 @@ def render_character_slot(profile: dict) -> None:
     )
 
 
-def start_profile_edit(profile: dict, field: str, new_value: str) -> None:
-    """기존 프로필과 한 항목의 변경값을 새 AI 검토 세션으로 전달합니다."""
+def start_full_profile_edit(profile: dict) -> None:
+    """현재 프로필 전체를 AI 채팅에 전달해 모든 항목을 다시 검토합니다."""
 
-    # 내부 ID와 평가 결과는 제외하고 사용자가 작성한 8개 필드만 전달합니다.
     current_profile = {
         key: profile.get(key)
         for key in PROFILE_FIELDS
     }
-    field_label = PROFILE_FIELDS[field][1]
     edit_request = (
-        "아래는 이미 저장된 내 취업 프로필이야. 기존 내용을 초안으로 사용해 줘.\n"
+        "아래는 현재 저장된 내 취업 프로필이야. 기존 내용을 초안으로 사용해 줘.\n"
         f"{json.dumps(current_profile, ensure_ascii=False)}\n"
-        f"이 중 {field_label} 항목만 '{new_value.strip()}'으로 수정하고 "
-        "나머지 항목은 그대로 유지해 줘. 수정된 전체 프로필을 검토할 수 있게 해 줘."
+        "목표 직무, 보유 기술, 경험, 목표 취업일, 희망 기업, 근무 환경, "
+        "알림 시간, AI 답변 스타일을 전체적으로 다시 수정하고 싶어. "
+        "한 번에 하나씩 필요한 내용을 질문하고 마지막에 수정된 전체 프로필을 검토하게 해 줘."
     )
-    if len(edit_request) > 4000:
-        raise BackendAPIError(
-            "VALIDATION_ERROR",
-            "기존 프로필과 수정 내용이 너무 깁니다. 수정 내용을 더 짧게 입력해 주세요.",
-        )
 
-    # 새 온보딩 세션을 만든 뒤 기존 프로필과 부분 수정 요청을 첫 답변으로 보냅니다.
     start_response, _ = start_onboarding()
     response, pending = send_message(start_response["session_id"], edit_request)
     messages = []
@@ -183,7 +176,9 @@ def start_profile_edit(profile: dict, field: str, new_value: str) -> None:
     st.session_state.onboarding_pending = pending
     st.session_state.onboarding_messages = messages
     st.session_state.onboarding_submitting = False
-    st.session_state.onboarding_flash = "기존 프로필을 불러왔습니다. 수정 결과를 확인해 주세요."
+    st.session_state.onboarding_flash = (
+        "현재 프로필을 불러왔어요. AI와 대화하며 전체 내용을 다시 정리해 보세요."
+    )
 
 
 def main() -> None:
@@ -219,48 +214,27 @@ def main() -> None:
     with profile_column:
         render_profile_cards(profile)
 
-    with st.expander("AI 채팅으로 프로필 일부 수정"):
-        with st.form("profile_ai_edit_form"):
-            selected_field = st.selectbox(
-                "수정할 항목",
-                options=list(PROFILE_FIELDS.keys()),
-                format_func=lambda field: (
-                    f"{PROFILE_FIELDS[field][0]} {PROFILE_FIELDS[field][1]}"
-                ),
-            )
-            current_value = display_value(profile.get(selected_field))
-            st.caption(f"현재 값: {current_value}")
-            new_value = st.text_area(
-                "새로운 내용",
-                placeholder="선택한 항목에 적용할 내용을 입력해 주세요.",
-                max_chars=1000,
-            )
-            edit_submitted = st.form_submit_button(
-                "AI에게 수정 요청",
-                use_container_width=True,
-            )
+    st.divider()
+    full_edit_column, roadmap_column = st.columns(2)
+    with full_edit_column:
+        if st.button(
+            "AI와 전체 프로필 다시 작성하기",
+            use_container_width=True,
+        ):
+            try:
+                with st.spinner("AI가 현재 프로필을 불러오고 있어요..."):
+                    start_full_profile_edit(profile)
+                st.switch_page("app_pages/onboarding.py")
+            except BackendAPIError as error:
+                st.error(error.message)
 
-        if edit_submitted:
-            if not new_value.strip():
-                st.warning("새로운 내용을 입력해 주세요.")
-            else:
-                try:
-                    with st.spinner("AI가 기존 프로필을 불러오고 있습니다..."):
-                        start_profile_edit(
-                            profile,
-                            selected_field,
-                            new_value,
-                        )
-                    st.switch_page("app_pages/onboarding.py")
-                except BackendAPIError as error:
-                    st.error(error.message)
-
-    if st.button(
-        "취업 로드맵으로 이동",
-        use_container_width=True,
-        type="primary",
-    ):
-        st.switch_page("app_pages/roadmap.py")
+    with roadmap_column:
+        if st.button(
+            "취업 로드맵으로 이동",
+            use_container_width=True,
+            type="primary",
+        ):
+            st.switch_page("app_pages/roadmap.py")
 
 
 main()

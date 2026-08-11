@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 
 from clients.assistant_client import start_assistant_session
 from core.api_client import BackendAPIError
@@ -130,6 +131,38 @@ def submit_message(text: str) -> None:
     st.session_state.assistant_pending_question = normalized_text
 
 
+def scroll_to_latest_message() -> None:
+    """고정 높이 상담 영역을 가장 최근 메시지 위치로 이동합니다."""
+
+    # st.container(height=...)는 스크롤바만 만들고 자동 이동은 하지 않습니다.
+    components.html(
+        """
+        <script>
+        setTimeout(() => {
+            const parentDocument = window.parent.document;
+            const wrappers = parentDocument.querySelectorAll(
+                '[data-testid="stVerticalBlockBorderWrapper"]'
+            );
+
+            for (let index = wrappers.length - 1; index >= 0; index -= 1) {
+                const elements = wrappers[index].querySelectorAll('div');
+                for (const element of elements) {
+                    const style = window.parent.getComputedStyle(element);
+                    const scrollable = ['auto', 'scroll'].includes(style.overflowY);
+                    if (scrollable && element.scrollHeight > element.clientHeight) {
+                        element.scrollTop = element.scrollHeight;
+                        return;
+                    }
+                }
+            }
+        }, 100);
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
+
+
 def show_assistant() -> None:
     """AI 상담 헤더, 추천 질문, 대화 목록, 입력 폼을 순서대로 표시합니다."""
 
@@ -195,6 +228,8 @@ def show_assistant() -> None:
 
             if st.session_state.assistant_pending_question:
                 st.info("질문이 화면 상태에 저장되었습니다. AI API 연결 후 응답을 표시합니다.")
+
+        scroll_to_latest_message()
 
         # 컨테이너 안에서 사용하면 입력창이 대화 영역 바로 아래에 표시됩니다.
         user_text = st.chat_input(
