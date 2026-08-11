@@ -64,6 +64,7 @@ class RedisPlanGenerationStore:
                 "assessment_score",
                 "assessment_level",
                 "assessment_summary",
+                "saved_job_snapshot",
                 "generated_on",
                 "starts_on",
                 "ends_on",
@@ -94,6 +95,11 @@ class RedisPlanGenerationStore:
                 assessment_score=fields["assessment_score"],
                 assessment_level=fields["assessment_level"],
                 assessment_summary=json.loads(fields["assessment_summary"]),
+                saved_job_snapshot=(
+                    json.loads(fields["saved_job_snapshot"])
+                    if "saved_job_snapshot" in fields
+                    else None
+                ),
                 generated_on=fields["generated_on"],
                 starts_on=fields["starts_on"],
                 ends_on=fields["ends_on"],
@@ -138,7 +144,7 @@ class RedisPlanGenerationStore:
 
     @staticmethod
     def _frozen_fields(checkpoint: GenerationCheckpoint) -> dict[str, str]:
-        return {
+        fields = {
             "checkpoint_version": checkpoint.checkpoint_version,
             "kind": checkpoint.kind,
             "user_id": str(checkpoint.user_id),
@@ -159,6 +165,9 @@ class RedisPlanGenerationStore:
             "ends_on": checkpoint.ends_on.isoformat(),
             "duration_days": str(checkpoint.duration_days),
         }
+        if checkpoint.saved_job_snapshot is not None:
+            fields["saved_job_snapshot"] = checkpoint.saved_job_snapshot.model_dump_json()
+        return fields
 
     async def save_outline(
         self, *, user_id: UUID, request_id: UUID, outline: ProfilePlanOutlineV1

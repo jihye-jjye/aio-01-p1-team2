@@ -33,7 +33,9 @@ class ApiPort(Protocol):
     async def onboarding_result(self, session_id: str) -> dict[str, Any]: ...
     async def confirm(self, session_id: str, revision: int) -> dict[str, Any]: ...
     async def restart(self, session_id: str) -> dict[str, Any]: ...
-    async def create_plan_proposal(self, request_id: str) -> dict[str, Any]: ...
+    async def create_plan_proposal(
+        self, request_id: str, saved_job_id: str | None = None
+    ) -> dict[str, Any]: ...
     async def pending_plan_proposal(
         self, start_on: str | None = None, days: int = 7
     ) -> dict[str, Any]: ...
@@ -43,6 +45,7 @@ class ApiPort(Protocol):
     async def accept_plan_proposal(self, proposal_id: str) -> dict[str, Any]: ...
     async def reject_plan_proposal(self, proposal_id: str) -> dict[str, Any]: ...
     async def active_plan(self, start_on: str | None = None, days: int = 7) -> dict[str, Any]: ...
+    async def plans_summary(self) -> dict[str, Any]: ...
     async def plan(
         self, plan_id: str, start_on: str | None = None, days: int = 7
     ) -> dict[str, Any]: ...
@@ -150,10 +153,15 @@ class CoachApiClient:
             payload={"request_id": str(uuid4()), "action": "onboarding.restart"},
         )
 
-    async def create_plan_proposal(self, request_id: str) -> dict[str, Any]:
+    async def create_plan_proposal(
+        self, request_id: str, saved_job_id: str | None = None
+    ) -> dict[str, Any]:
+        payload = {"request_id": request_id}
+        if saved_job_id is not None:
+            payload["saved_job_id"] = saved_job_id
         return await self._state_change(
             "/api/v1/plan-proposals",
-            payload={"request_id": request_id},
+            payload=payload,
         )
 
     async def pending_plan_proposal(
@@ -201,6 +209,9 @@ class CoachApiClient:
             f"/api/v1/plans/{plan_id}",
             params=self._window_params(start_on=start_on, days=days),
         )
+
+    async def plans_summary(self) -> dict[str, Any]:
+        return await self._request("GET", "/api/v1/plans/summary")
 
     async def set_plan_task_status(
         self,

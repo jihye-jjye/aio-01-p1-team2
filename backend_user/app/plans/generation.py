@@ -22,6 +22,7 @@ from app.plans.models import (
     validate_milestones,
 )
 from app.profiles.models import ProfileOnboardingData
+from app.saved_jobs.models import SavedJobView
 
 
 class PlanGenerationError(RuntimeError):
@@ -134,6 +135,7 @@ class ProfilePlanGenerator:
         assessment_score: int,
         assessment_level: Literal["beginner", "intermediate", "advanced"],
         assessment_summary: dict[str, Any],
+        saved_job_snapshot: SavedJobView | None = None,
         generated_on: date | None = None,
         cached_outline: ProfilePlanOutlineV1 | None = None,
         cached_batches: Mapping[int, ProfilePlanTasksV1] | None = None,
@@ -149,6 +151,7 @@ class ProfilePlanGenerator:
             assessment_score=assessment_score,
             assessment_level=assessment_level,
             assessment_summary=assessment_summary,
+            saved_job_snapshot=saved_job_snapshot,
             generated_on=plan_start,
             target_date=profile_snapshot.target_date,
         )
@@ -216,6 +219,8 @@ class ProfilePlanGenerator:
             "total_task_count": total_task_count,
             "engine": self._engine.model_dump(mode="json"),
         }
+        if saved_job_snapshot is not None:
+            content["saved_job_snapshot"] = saved_job_snapshot.model_dump(mode="json")
         return ProfilePlanProposalV1(
             **content,
             proposal_hash=profile_plan_proposal_hash(content),
@@ -249,6 +254,7 @@ class ProfilePlanGenerator:
             assessment_score=assessment_score,
             assessment_level=assessment_level,
             assessment_summary=assessment_summary or {},
+            saved_job_snapshot=existing_proposal.saved_job_snapshot,
             generated_on=plan_start,
             target_date=profile_snapshot.target_date,
         )
@@ -306,6 +312,10 @@ class ProfilePlanGenerator:
             "total_task_count": total_task_count,
             "engine": self._engine.model_dump(mode="json"),
         }
+        if existing_proposal.saved_job_snapshot is not None:
+            content["saved_job_snapshot"] = existing_proposal.saved_job_snapshot.model_dump(
+                mode="json"
+            )
         return ProfilePlanProposalV1(
             **content,
             proposal_hash=profile_plan_proposal_hash(content),

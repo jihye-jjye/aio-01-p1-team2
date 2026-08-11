@@ -17,6 +17,7 @@ from app.plans.errors import (
     PlanProposalAlreadyPendingError,
     PlanProposalNotFoundError,
     PlanProposalNotPendingError,
+    PlanSavedJobExpiredError,
     PlanTaskNotFoundError,
     TodayQuestNotFoundError,
 )
@@ -24,6 +25,7 @@ from app.plans.generation import ProfilePlanGenerator, validate_horizon
 from app.plans.models import ProfilePlanOutlineV1, ProfilePlanProposalV1, ProfilePlanTasksV1
 from app.plans.records import (
     PlanGenerationPreflight,
+    PlanSummarySnapshot,
     StoredPlan,
     StoredPlanProposal,
     StoredTaskUpdate,
@@ -63,7 +65,9 @@ class PlanRepositoryPort(Protocol):
         self, *, user_id: UUID, request_id: UUID
     ) -> StoredPlanProposal | str | None: ...
 
-    async def get_generation_preflight(self, *, user_id: UUID) -> PlanGenerationPreflight: ...
+    async def get_generation_preflight(
+        self, *, user_id: UUID, saved_job_id: UUID | None
+    ) -> PlanGenerationPreflight: ...
 
     async def persist_generated_proposal(
         self,
@@ -72,6 +76,7 @@ class PlanRepositoryPort(Protocol):
         request_id: UUID,
         proposal: ProfilePlanProposalV1,
         today: date,
+        saved_job_id: UUID | None,
     ) -> StoredPlanProposal: ...
 
     async def get_pending_proposal(self, *, user_id: UUID) -> StoredPlanProposal | None: ...
@@ -110,23 +115,44 @@ class PlanProposalService:
         self._generation_timeout_seconds = generation_timeout_seconds
         self._generation_error_normalizer = generation_error_normalizer
 
-    async def create(self, *, user_id: UUID, request_id: UUID) -> StoredPlanProposal:
-        durable = await self._resolve_durable(user_id=user_id, request_id=request_id)
+    async def create(
+        self,
+        *,
+        user_id: UUID,
+        request_id: UUID,
+        saved_job_id: UUID | None = None,
+    ) -> StoredPlanProposal:
+        durable = await self._resolve_durable(
+            user_id=user_id,
+            request_id=request_id,
+            saved_job_id=saved_job_id,
+        )
         if durable is not None:
             return durable
 
         async with self._request_lock.hold(user_id=user_id, request_id=request_id):
-            durable = await self._resolve_durable(user_id=user_id, request_id=request_id)
+            durable = await self._resolve_durable(
+                user_id=user_id,
+                request_id=request_id,
+                saved_job_id=saved_job_id,
+            )
             if durable is not None:
                 return durable
 
             checkpoint = await self._checkpoints.load(user_id=user_id, request_id=request_id)
             preflight_checked = False
             if checkpoint is None:
-                prerequisites = await self._repository.get_generation_preflight(user_id=user_id)
-                self._ensure_available(prerequisites, request_id=request_id)
-                preflight_checked = True
+                prerequisites = await self._repository.get_generation_preflight(
+                    user_id=user_id,
+                    saved_job_id=saved_job_id,
+                )
                 generated_on = self._today_provider()
+                self._ensure_available(
+                    prerequisites,
+                    request_id=request_id,
+                    today=generated_on,
+                )
+                preflight_checked = True
                 duration_days = validate_horizon(
                     generated_on, prerequisites.profile_snapshot.target_date
                 )
@@ -140,6 +166,7 @@ class PlanProposalService:
                         assessment_score=prerequisites.assessment_score,
                         assessment_level=prerequisites.assessment_level,
                         assessment_summary=prerequisites.assessment_summary,
+                        saved_job_snapshot=prerequisites.saved_job_snapshot,
                         generated_on=generated_on,
                         starts_on=generated_on,
                         ends_on=prerequisites.profile_snapshot.target_date,
@@ -148,10 +175,24 @@ class PlanProposalService:
                 )
 
             proposal = checkpoint.proposal
+            checkpoint_saved_job_id = (
+                checkpoint.saved_job_snapshot.id
+                if checkpoint.saved_job_snapshot is not None
+                else None
+            )
+            if checkpoint_saved_job_id != saved_job_id:
+                raise IdempotencyKeyReusedError()
             if proposal is None:
                 if not preflight_checked:
-                    prerequisites = await self._repository.get_generation_preflight(user_id=user_id)
-                    self._ensure_available(prerequisites, request_id=request_id)
+                    prerequisites = await self._repository.get_generation_preflight(
+                        user_id=user_id,
+                        saved_job_id=saved_job_id,
+                    )
+                    self._ensure_available(
+                        prerequisites,
+                        request_id=request_id,
+                        today=self._today_provider(),
+                    )
 
                 async def outline_completed(value: ProfilePlanOutlineV1) -> None:
                     await self._checkpoints.save_outline(
@@ -178,6 +219,7 @@ class PlanProposalService:
                             assessment_score=checkpoint.assessment_score,
                             assessment_level=checkpoint.assessment_level,
                             assessment_summary=checkpoint.assessment_summary,
+                            saved_job_snapshot=checkpoint.saved_job_snapshot,
                             generated_on=checkpoint.generated_on,
                             cached_outline=checkpoint.outline,
                             cached_batches=checkpoint.batches,
@@ -204,6 +246,7 @@ class PlanProposalService:
                 request_id=request_id,
                 proposal=proposal,
                 today=self._today_provider(),
+                saved_job_id=saved_job_id,
             )
 
     async def get_pending(self, *, user_id: UUID) -> StoredPlanProposal:
@@ -236,7 +279,10 @@ class PlanProposalService:
                     return durable
                 raise IdempotencyKeyReusedError()
 
-            prerequisites = await self._repository.get_generation_preflight(user_id=user_id)
+            prerequisites = await self._repository.get_generation_preflight(
+                user_id=user_id,
+                saved_job_id=existing.saved_job_id,
+            )
 
             try:
                 async with asyncio.timeout(self._generation_timeout_seconds):
@@ -266,17 +312,22 @@ class PlanProposalService:
             )
 
     async def _resolve_durable(
-        self, *, user_id: UUID, request_id: UUID
+        self, *, user_id: UUID, request_id: UUID, saved_job_id: UUID | None
     ) -> StoredPlanProposal | None:
         result = await self._repository.find_by_request(user_id=user_id, request_id=request_id)
         if result is None:
             return None
-        if not isinstance(result, StoredPlanProposal):
+        if not isinstance(result, StoredPlanProposal) or result.saved_job_id != saved_job_id:
             raise IdempotencyKeyReusedError()
         return result
 
     @staticmethod
-    def _ensure_available(prerequisites: PlanGenerationPreflight, *, request_id: UUID) -> None:
+    def _ensure_available(
+        prerequisites: PlanGenerationPreflight,
+        *,
+        request_id: UUID,
+        today: date,
+    ) -> None:
         if prerequisites.active_plan_exists:
             raise ActivePlanExistsError()
         if (
@@ -284,6 +335,12 @@ class PlanProposalService:
             and prerequisites.pending_request_id != request_id
         ):
             raise PlanProposalAlreadyPendingError()
+        if (
+            prerequisites.saved_job_snapshot is not None
+            and prerequisites.saved_job_snapshot.deadline is not None
+            and prerequisites.saved_job_snapshot.deadline < today
+        ):
+            raise PlanSavedJobExpiredError()
 
 
 class PlanManagementRepositoryPort(Protocol):
@@ -296,6 +353,8 @@ class PlanManagementRepositoryPort(Protocol):
     async def get_active_plan(self, *, user_id: UUID) -> StoredPlan | None: ...
 
     async def get_plan(self, *, user_id: UUID, plan_id: UUID) -> StoredPlan | None: ...
+
+    async def list_plans(self, *, user_id: UUID) -> PlanSummarySnapshot: ...
 
     async def set_task_status(
         self,
@@ -357,6 +416,9 @@ class PlanManagementService:
         if result is None:
             raise PlanNotFoundError()
         return result
+
+    async def get_plans_summary(self, *, user_id: UUID) -> PlanSummarySnapshot:
+        return await self._repository.list_plans(user_id=user_id)
 
     async def set_task_status(
         self,

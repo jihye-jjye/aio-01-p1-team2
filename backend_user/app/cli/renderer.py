@@ -112,12 +112,13 @@ class RichRenderer:
                     "1. 프로필 보기\n"
                     "2. 로드맵 제안 생성·검토\n"
                     "3. 활성 로드맵\n"
-                    "4. 오늘 퀘스트\n"
-                    "5. 전체 채용 공고\n"
-                    "6. 온보딩 기반 추천 공고\n"
-                    "7. 공지 사항\n"
-                    "8. 프로필 재온보딩\n"
-                    "9. 다른 계정으로 로그인\n"
+                    "4. 내 로드맵 완료율 요약\n"
+                    "5. 오늘 퀘스트\n"
+                    "6. 전체 채용 공고\n"
+                    "7. 온보딩 기반 추천 공고\n"
+                    "8. 공지 사항\n"
+                    "9. 프로필 재온보딩\n"
+                    "10. 다른 계정으로 로그인\n"
                     "0. 종료"
                 ),
                 title=Text("메인 메뉴"),
@@ -133,12 +134,13 @@ class RichRenderer:
                     "1. 프로필 보기\n"
                     "2. 로드맵 제안 생성·검토\n"
                     "3. 활성 로드맵\n"
-                    "4. 오늘 퀘스트\n"
-                    "5. 전체 채용 공고\n"
-                    "6. 온보딩 기반 추천 공고\n"
-                    "7. 공지 사항\n"
-                    "8. 프로필 재온보딩\n"
-                    "9. 다른 계정으로 로그인\n"
+                    "4. 내 로드맵 완료율 요약\n"
+                    "5. 오늘 퀘스트\n"
+                    "6. 전체 채용 공고\n"
+                    "7. 온보딩 기반 추천 공고\n"
+                    "8. 공지 사항\n"
+                    "9. 프로필 재온보딩\n"
+                    "10. 다른 계정으로 로그인\n"
                     "0. 종료\n"
                     "/help  도움말\n"
                     "/quit  종료"
@@ -331,6 +333,63 @@ class RichRenderer:
                 border_style="blue",
             )
         )
+
+    def plans_summary(self, view: dict[str, Any]) -> None:
+        plans = _items(view.get("plans"))
+        if not plans:
+            self.console.print(
+                Panel(
+                    Text("생성된 로드맵이 없습니다."),
+                    title=Text("내 로드맵 완료율 요약"),
+                    border_style="yellow",
+                )
+            )
+            self.console.print(
+                Text(f"누적 EXP {_display(view.get('user_exp'))}")
+            )
+            return
+
+        self.console.print(
+            Panel(
+                Text(
+                    f"로드맵 {_display(view.get('plan_count'))}개 · "
+                    f"전체 과제 {_display(view.get('aggregate_completed_task_count'))}/"
+                    f"{_display(view.get('aggregate_total_task_count'))} 완료 · "
+                    f"통합 완료율 {_display(view.get('aggregate_percent'))}% · "
+                    f"누적 EXP {_display(view.get('user_exp'))}"
+                ),
+                title=Text("내 로드맵 완료율 요약"),
+                border_style="cyan",
+            )
+        )
+
+        table = Table(title=Text("로드맵별 완료율"), show_lines=True)
+        table.add_column(Text("번호"), style="bold", justify="right")
+        table.add_column(Text("제목"), overflow="fold")
+        table.add_column(Text("상태"))
+        table.add_column(Text("기간"))
+        table.add_column(Text("일수"), justify="right")
+        table.add_column(Text("완료/전체"), justify="right")
+        table.add_column(Text("완료율"), justify="right")
+        table.add_column(Text("활성화 시각"))
+        table.add_column(Text("종료 시각"))
+        for number, plan_value in enumerate(plans, start=1):
+            plan = _mapping(plan_value)
+            table.add_row(
+                Text(str(number)),
+                Text(_display(plan.get("title"))),
+                Text(_display(plan.get("status"))),
+                Text(_span(plan, "starts_on", "ends_on")),
+                Text(f"{_display(plan.get('duration_days'))}일"),
+                Text(
+                    f"{_display(plan.get('completed_task_count'))}/"
+                    f"{_display(plan.get('total_task_count'))}"
+                ),
+                Text(f"{_display(plan.get('percent'))}%"),
+                Text(_display(plan.get("activated_at"))),
+                Text(_display(plan.get("ended_at"))),
+            )
+        self.console.print(table)
 
     def proposal(self, proposal: dict) -> None:
         self.console.print(

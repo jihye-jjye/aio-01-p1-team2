@@ -16,6 +16,7 @@ from app.plans.models import (
     validate_milestones,
 )
 from app.profiles.models import ProfileOnboardingData
+from app.saved_jobs.models import SavedJobView
 
 
 class GenerationCheckpoint(StrictPlanModel):
@@ -31,6 +32,7 @@ class GenerationCheckpoint(StrictPlanModel):
     assessment_score: int = Field(ge=0, le=100)
     assessment_level: Literal["beginner", "intermediate", "advanced"]
     assessment_summary: dict[str, Any]
+    saved_job_snapshot: SavedJobView | None = None
     generated_on: date
     starts_on: date
     ends_on: date
@@ -64,6 +66,7 @@ class GenerationCheckpoint(StrictPlanModel):
                 self.proposal.profile_snapshot != self.profile_snapshot
                 or self.proposal.profile_hash != self.profile_hash
                 or self.proposal.assessment_result_id != self.assessment_result_id
+                or self.proposal.saved_job_snapshot != self.saved_job_snapshot
                 or self.proposal.generated_on != self.generated_on
                 or self.proposal.starts_on != self.starts_on
                 or self.proposal.ends_on != self.ends_on

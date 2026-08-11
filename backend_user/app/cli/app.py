@@ -34,7 +34,9 @@ class ApiPort(Protocol):
     async def onboarding_result(self, session_id: str) -> dict[str, Any]: ...
     async def confirm(self, session_id: str, revision: int) -> dict[str, Any]: ...
     async def restart(self, session_id: str) -> dict[str, Any]: ...
-    async def create_plan_proposal(self, request_id: str) -> dict[str, Any]: ...
+    async def create_plan_proposal(
+        self, request_id: str, saved_job_id: str | None = None
+    ) -> dict[str, Any]: ...
     async def pending_plan_proposal(
         self, start_on: str | None = None, days: int = 7
     ) -> dict[str, Any]: ...
@@ -44,6 +46,7 @@ class ApiPort(Protocol):
     async def accept_plan_proposal(self, proposal_id: str) -> dict[str, Any]: ...
     async def reject_plan_proposal(self, proposal_id: str) -> dict[str, Any]: ...
     async def active_plan(self, start_on: str | None = None, days: int = 7) -> dict[str, Any]: ...
+    async def plans_summary(self) -> dict[str, Any]: ...
     async def plan(
         self, plan_id: str, start_on: str | None = None, days: int = 7
     ) -> dict[str, Any]: ...
@@ -88,6 +91,7 @@ class RendererPort(Protocol):
     def notices(self, notices: list[dict[str, Any]]) -> None: ...
     def today_quests(self, view: dict[str, Any]) -> None: ...
     def today_quest_help(self) -> None: ...
+    def plans_summary(self, view: dict[str, Any]) -> None: ...
     def proposal(self, proposal: dict[str, Any]) -> None: ...
     def proposal_help(self) -> None: ...
     def plan(self, plan: dict[str, Any], *, task_numbers: dict[str, int]) -> None: ...
@@ -179,6 +183,7 @@ class CliApp:
         self.input = input_port or TerminalInput()
         self.renderer = renderer or RichRenderer()
         self._proposal_request_id: str | None = None
+        self._selected_saved_job_id: str | None = None
 
     async def run(self) -> int:
         code = 0
@@ -319,26 +324,31 @@ class CliApp:
                     return result
                 continue
             if choice == "4":
+                result = await self._plans_summary_entry()
+                if isinstance(result, ReloginRequired):
+                    return result
+                continue
+            if choice == "5":
                 result = await self._today_quests_entry()
                 if isinstance(result, (int, ReloginRequired)):
                     return result
                 continue
-            if choice == "5":
+            if choice == "6":
                 result = await self._saved_jobs_entry()
                 if isinstance(result, ReloginRequired):
                     return result
                 continue
-            if choice == "6":
+            if choice == "7":
                 result = await self._recommend_saved_job_entry()
-                if isinstance(result, ReloginRequired):
+                if isinstance(result, (int, ReloginRequired)):
                     return result
                 continue
-            if choice == "7":
+            if choice == "8":
                 result = await self._notices_entry()
                 if isinstance(result, ReloginRequired):
                     return result
                 continue
-            if choice == "8":
+            if choice == "9":
                 result = await self._reonboard()
                 if isinstance(result, ProfileReady):
                     profile = result.profile
@@ -346,8 +356,9 @@ class CliApp:
                 if isinstance(result, (int, ReloginRequired)):
                     return result
                 continue
-            if choice == "9":
+            if choice == "10":
                 self._proposal_request_id = None
+                self._selected_saved_job_id = None
                 return SwitchAccount()
             self.renderer.main_menu_help()
 
@@ -373,6 +384,18 @@ class CliApp:
                 return ReloginRequired()
             return None
         self.renderer.notices(notices)
+        return None
+
+    async def _plans_summary_entry(self) -> ReloginRequired | None:
+        try:
+            with self.renderer.status("로드맵 완료율 조회 중..."):
+                view = await self.api.plans_summary()
+        except ApiError as exc:
+            self.renderer.error(_friendly_error(exc))
+            if _requires_login(exc):
+                return ReloginRequired()
+            return None
+        self.renderer.plans_summary(view if isinstance(view, dict) else {})
         return None
 
     async def _today_quests_entry(self) -> int | ReloginRequired | None:
@@ -474,7 +497,10 @@ class CliApp:
             self._proposal_request_id = request_id
             try:
                 with self.renderer.status("Gemini가 로드맵 제안을 생성하는 중..."):
-                    proposal = await self.api.create_plan_proposal(request_id)
+                    proposal = await self.api.create_plan_proposal(
+                        request_id,
+                        saved_job_id=self._selected_saved_job_id,
+                    )
             except ApiError as create_exc:
                 if not _retain_proposal_request(create_exc):
                     self._proposal_request_id = None
@@ -1021,6 +1047,8 @@ class CliApp:
                             recommendation_result = (
                                 await self._recommend_saved_job_entry()
                             )
+                            if isinstance(recommendation_result, int):
+                                return recommendation_result
                             if isinstance(recommendation_result, ReloginRequired):
                                 return ReloginRequired(pending)
                             return ProfileReady(profile)
@@ -1030,6 +1058,8 @@ class CliApp:
                 elif _pending_matches_profile(pending, profile):
                     self.renderer.success(profile)
                     recommendation_result = await self._recommend_saved_job_entry()
+                    if isinstance(recommendation_result, int):
+                        return recommendation_result
                     if isinstance(recommendation_result, ReloginRequired):
                         return ReloginRequired(pending)
                     return ProfileReady(profile)
@@ -1048,7 +1078,7 @@ class CliApp:
                 continue
             self.renderer.verification_help()
 
-    async def _recommend_saved_job_entry(self) -> ReloginRequired | None:
+    async def _recommend_saved_job_entry(self) -> int | ReloginRequired | None:
         try:
             with self.renderer.status("희망 환경 맞춤 공고 추천 중..."):
                 recommendation = await self.api.saved_job_recommendation()
@@ -1058,6 +1088,20 @@ class CliApp:
                 return ReloginRequired()
             return None
         self.renderer.saved_job_recommendation(recommendation)
+        if recommendation is None:
+            return None
+        job = recommendation.get("job")
+        job_id = job.get("id") if isinstance(job, dict) else None
+        if not _is_canonical_uuid(job_id):
+            self.renderer.error("추천 공고 ID를 확인할 수 없습니다.")
+            return None
+        confirmation = await self._yes_or_no("이 추천 공고를 로드맵 대상으로 선택할까요? (y/n)")
+        if type(confirmation) is int:
+            return confirmation
+        self._proposal_request_id = None
+        self._selected_saved_job_id = job_id if confirmation else None
+        if confirmation:
+            self.renderer.notice("추천 공고를 선택했습니다. 로드맵 생성 시 이 공고를 반영합니다.")
         return None
 
 

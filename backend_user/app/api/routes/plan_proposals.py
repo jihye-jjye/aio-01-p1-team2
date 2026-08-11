@@ -21,7 +21,10 @@ CREATE_ERROR_RESPONSES = {
     401: {"model": APIErrorEnvelope, "description": "`UNAUTHORIZED`: 인증 실패"},
     404: {
         "model": APIErrorEnvelope,
-        "description": "`PROFILE_NOT_FOUND`: 확정 프로필 또는 준비도 평가 없음",
+        "description": (
+            "- `PROFILE_NOT_FOUND`: 확정 프로필 또는 준비도 평가 없음\n"
+            "- `SAVED_JOB_NOT_FOUND`: 선택한 저장 공고를 찾을 수 없음"
+        ),
     },
     409: {
         "model": APIErrorEnvelope,
@@ -39,6 +42,7 @@ CREATE_ERROR_RESPONSES = {
         "description": (
             "- `VALIDATION_ERROR`: request_id 형식 오류\n"
             "- `PLAN_TARGET_DATE_EXPIRED`: 프로필 목표일 경과\n"
+            "- `SAVED_JOB_EXPIRED`: 선택한 저장 공고의 마감일 경과\n"
             "- `PLAN_HORIZON_TOO_LONG`: 생성 기간이 최대 365일 초과\n"
             "- `GEMINI_CONTENT_BLOCKED`: Gemini 안전 필터 차단"
         ),
@@ -147,11 +151,13 @@ REJECT_ERROR_RESPONSES = {
     "",
     response_model=PlanProposalView,
     status_code=status.HTTP_201_CREATED,
-    summary="프로필 기반 계획 제안 생성",
+    summary="프로필·선택 공고 기반 계획 제안 생성",
     description="""
-확정 프로필과 추적 가능한 준비도 평가를 기준으로 계획 제안을 생성합니다.
+확정 프로필과 추적 가능한 준비도 평가를 기준으로 계획 제안을 생성합니다. `saved_job_id`를
+지정하면 해당 저장 공고의 스냅샷도 생성 입력에 포함해 공고 맞춤형 로드맵을 만듭니다.
 
 - `request_id`는 생성 요청의 멱등성 키이며 사용자 ID는 Bearer access token에서 결정합니다.
+- `saved_job_id`는 선택 사항이며, 생략하면 기존처럼 프로필만으로 생성합니다.
 - KST 오늘부터 프로필 목표일까지 주차별 milestone과 날짜별 task 1~3개를 생성합니다.
 - 전체 기간은 시작일과 종료일을 포함해 최대 365일입니다.
 - Gemini 생성은 28일 task batch, 최대 동시성 3으로 수행됩니다.
@@ -169,7 +175,11 @@ async def create_plan_proposal(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     service: Annotated[PlanProposalService, Depends(get_plan_proposal_service)],
 ) -> PlanProposalView:
-    proposal = await service.create(user_id=current_user.id, request_id=payload.request_id)
+    proposal = await service.create(
+        user_id=current_user.id,
+        request_id=payload.request_id,
+        saved_job_id=payload.saved_job_id,
+    )
     return build_plan_proposal_view(proposal, start_on=None, days=7)
 
 

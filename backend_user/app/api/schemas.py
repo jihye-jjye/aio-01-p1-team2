@@ -38,6 +38,7 @@ class OnboardingConfirmRequest(BaseModel):
 
 class PlanProposalCreateRequest(BaseModel):
     request_id: UUID
+    saved_job_id: UUID | None = None
 
 
 class PlanTaskStatusRequest(BaseModel):

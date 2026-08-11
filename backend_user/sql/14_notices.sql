@@ -18,6 +18,58 @@ create table if not exists app.notices (
     check (expires_at is null or expires_at > published_at)
 );
 
+-- Align a legacy notices table without replacing or deleting existing rows.
+alter table app.notices
+  add column if not exists is_pinned boolean,
+  add column if not exists published_at timestamptz,
+  add column if not exists expires_at timestamptz;
+
+update app.notices
+set
+  is_pinned = coalesce(is_pinned, false),
+  published_at = coalesce(published_at, created_at, now())
+where is_pinned is null or published_at is null;
+
+alter table app.notices
+  alter column is_pinned set default false,
+  alter column is_pinned set not null,
+  alter column published_at set default now(),
+  alter column published_at set not null;
+
+do $block$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'app.notices'::regclass
+      and conname = 'notices_title_check'
+  ) then
+    alter table app.notices
+      add constraint notices_title_check
+      check (char_length(title) between 1 and 200 and btrim(title) <> '');
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'app.notices'::regclass
+      and conname = 'notices_content_check'
+  ) then
+    alter table app.notices
+      add constraint notices_content_check
+      check (char_length(content) between 1 and 10000 and btrim(content) <> '');
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'app.notices'::regclass
+      and conname = 'notices_expiry_check'
+  ) then
+    alter table app.notices
+      add constraint notices_expiry_check
+      check (expires_at is null or expires_at > published_at);
+  end if;
+end
+$block$;
+
 create index if not exists notices_published_lookup_idx
   on app.notices (is_pinned desc, published_at desc, id desc)
   include (expires_at);
@@ -55,6 +107,7 @@ grant select on app.notices to app_runtime;
 
 alter table app.notices enable row level security;
 
+drop policy if exists notices_public_read on app.notices;
 drop policy if exists app_runtime_select_notices on app.notices;
 
 create policy app_runtime_select_notices

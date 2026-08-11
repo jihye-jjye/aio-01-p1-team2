@@ -22,18 +22,21 @@ from app.plans.errors import (
     PlanProposalAlreadyPendingError,
     PlanProposalNotPendingError,
     PlanProposalStaleError,
+    PlanSavedJobNotFoundError,
 )
 from app.plans.models import ProfilePlanProposalV1
 from app.plans.records import (
     DailyGoalAchievement,
     PlanGenerationPreflight,
     PlanScheduleItem,
+    PlanSummarySnapshot,
     StoredPlan,
     StoredPlanProposal,
     StoredTaskUpdate,
     TodayQuestSnapshot,
 )
 from app.profiles.models import ProfileOnboardingData
+from app.saved_jobs.models import SavedJobView
 
 
 class PsycopgPlanProposalRepository:
@@ -55,7 +58,12 @@ class PsycopgPlanProposalRepository:
             )
         return self._resolve_row(row)
 
-    async def get_generation_preflight(self, *, user_id: UUID) -> PlanGenerationPreflight:
+    async def get_generation_preflight(
+        self,
+        *,
+        user_id: UUID,
+        saved_job_id: UUID | None = None,
+    ) -> PlanGenerationPreflight:
         async with self._pool.connection() as connection:
             profile_cursor = await connection.execute(
                 """
@@ -79,6 +87,22 @@ class PsycopgPlanProposalRepository:
             profile_row = await profile_cursor.fetchone()
             if profile_row is None:
                 raise ProfileNotFoundError
+            saved_job_row = None
+            if saved_job_id is not None:
+                saved_job_cursor = await connection.execute(
+                    """
+                    select
+                      id, source_type, source_url, source_key, company_name,
+                      job_title, deadline, posting_text, extracted_data,
+                      created_at, updated_at
+                    from app.saved_jobs
+                    where id = %(saved_job_id)s
+                    """,
+                    {"saved_job_id": saved_job_id},
+                )
+                saved_job_row = await saved_job_cursor.fetchone()
+                if saved_job_row is None:
+                    raise PlanSavedJobNotFoundError()
             active_cursor = await connection.execute(
                 """
                 select id from app.plans
@@ -99,7 +123,12 @@ class PsycopgPlanProposalRepository:
                 {"user_id": user_id},
             )
             pending = await pending_cursor.fetchone()
-        return self._preflight(profile_row, active=active is not None, pending=pending)
+        return self._preflight(
+            profile_row,
+            active=active is not None,
+            pending=pending,
+            saved_job_row=saved_job_row,
+        )
 
     async def persist_generated_proposal(
         self,
@@ -108,12 +137,14 @@ class PsycopgPlanProposalRepository:
         request_id: UUID,
         proposal: ProfilePlanProposalV1,
         today: date,
+        saved_job_id: UUID | None = None,
     ) -> StoredPlanProposal:
         parameters: dict[str, Any] = {
             "user_id": user_id,
             "request_id": str(request_id),
             "kind": "profile_plan_proposal",
             "decision_status": "pending",
+            "saved_job_id": saved_job_id,
             "title": proposal.title,
             "content": Jsonb(proposal.model_dump(mode="json")),
             "model_name": proposal.engine.model,
@@ -188,6 +219,13 @@ class PsycopgPlanProposalRepository:
                     proposal=proposal,
                     today=locked_today,
                 )
+                proposal_saved_job_id = (
+                    proposal.saved_job_snapshot.id
+                    if proposal.saved_job_snapshot is not None
+                    else None
+                )
+                if proposal_saved_job_id != saved_job_id:
+                    raise PlanDataIntegrityError()
                 parameters.update(
                     title=proposal.title,
                     content=Jsonb(proposal.model_dump(mode="json")),
@@ -200,13 +238,13 @@ class PsycopgPlanProposalRepository:
                       user_id, saved_job_id, applied_plan_id, kind, decision_status,
                       title, content, model_name, prompt_version, request_id, decided_at
                     ) values (
-                      %(user_id)s, null, null, %(kind)s, %(decision_status)s,
+                      %(user_id)s, %(saved_job_id)s, null, %(kind)s, %(decision_status)s,
                       %(title)s, %(content)s, %(model_name)s, %(prompt_version)s,
                       %(request_id)s, null
                     )
                     on conflict (user_id, request_id) do nothing
                     returning
-                      id, user_id, request_id, kind, decision_status, content,
+                      id, user_id, saved_job_id, request_id, kind, decision_status, content,
                       model_name, prompt_version, applied_plan_id, decided_at, created_at
                     """,
                     parameters,
@@ -234,7 +272,7 @@ class PsycopgPlanProposalRepository:
             cursor = await connection.execute(
                 """
                 select
-                  id, user_id, request_id, kind, decision_status, content,
+                  id, user_id, saved_job_id, request_id, kind, decision_status, content,
                   model_name, prompt_version, applied_plan_id, decided_at, created_at
                 from app.ai_results
                 where user_id = %(user_id)s and id = %(proposal_id)s
@@ -261,6 +299,11 @@ class PsycopgPlanProposalRepository:
             "new_request_id": str(new_request_id),
             "kind": "profile_plan_proposal",
             "decision_status": "pending",
+            "saved_job_id": (
+                proposal.saved_job_snapshot.id
+                if proposal.saved_job_snapshot is not None
+                else None
+            ),
             "title": proposal.title,
             "content": Jsonb(proposal.model_dump(mode="json")),
             "model_name": proposal.engine.model,
@@ -293,7 +336,7 @@ class PsycopgPlanProposalRepository:
 
                 proposal_cursor = await connection.execute(
                     """
-                    select id, decision_status, content
+                    select id, saved_job_id, decision_status, content
                     from app.ai_results
                     where user_id = %(user_id)s
                       and id = %(old_proposal_id)s
@@ -307,6 +350,8 @@ class PsycopgPlanProposalRepository:
                     raise PlanProposalNotPendingError()
                 if old_row["decision_status"] != "pending":
                     raise PlanProposalNotPendingError()
+                if old_row.get("saved_job_id") != parameters["saved_job_id"]:
+                    raise PlanDataIntegrityError()
 
                 active_cursor = await connection.execute(
                     """
@@ -320,7 +365,6 @@ class PsycopgPlanProposalRepository:
                 if active is not None:
                     raise ActivePlanExistsError()
 
-                locked_today = self._today_provider()
                 try:
                     proposal = ProfilePlanProposalV1.model_validate(
                         proposal.model_dump(mode="json")
@@ -346,12 +390,12 @@ class PsycopgPlanProposalRepository:
                       user_id, saved_job_id, applied_plan_id, kind, decision_status,
                       title, content, model_name, prompt_version, request_id, decided_at
                     ) values (
-                      %(user_id)s, null, null, %(kind)s, %(decision_status)s,
+                      %(user_id)s, %(saved_job_id)s, null, %(kind)s, %(decision_status)s,
                       %(title)s, %(content)s, %(model_name)s, %(prompt_version)s,
                       %(new_request_id)s, null
                     )
                     returning
-                      id, user_id, request_id, kind, decision_status, content,
+                      id, user_id, saved_job_id, request_id, kind, decision_status, content,
                       model_name, prompt_version, applied_plan_id, decided_at, created_at
                     """,
                     parameters,
@@ -373,7 +417,7 @@ class PsycopgPlanProposalRepository:
             cursor = await connection.execute(
                 """
                 select
-                  id, user_id, request_id, kind, decision_status, content,
+                  id, user_id, saved_job_id, request_id, kind, decision_status, content,
                   model_name, prompt_version, applied_plan_id, decided_at, created_at
                 from app.ai_results
                 where user_id = %(user_id)s
@@ -493,6 +537,7 @@ class PsycopgPlanProposalRepository:
                     ends_on=proposal.ends_on,
                     total_task_count=proposal.total_task_count,
                     source_request_id=f"profile-plan-proposal:{proposal_id}",
+                    source_saved_job_id=stored_proposal.saved_job_id,
                     notification_time=notification_time,
                 )
                 plan_cursor = await connection.execute(
@@ -503,7 +548,7 @@ class PsycopgPlanProposalRepository:
                       final_progress, status, restart_offer_status, source_request_id,
                       activated_at, ended_at, restart_prompted_at
                     ) values (
-                      %(user_id)s, null, %(proposal_result_id)s, null,
+                      %(user_id)s, %(source_saved_job_id)s, %(proposal_result_id)s, null,
                       %(title)s, %(summary)s, %(goal_snapshot)s, %(starts_on)s, %(ends_on)s,
                       %(total_task_count)s, null, 'active', 'not_due', %(source_request_id)s,
                       now(), null, null
@@ -598,7 +643,7 @@ class PsycopgPlanProposalRepository:
                       and kind = 'profile_plan_proposal'
                       and decision_status = 'pending'
                     returning
-                      id, user_id, request_id, kind, decision_status, content,
+                      id, user_id, saved_job_id, request_id, kind, decision_status, content,
                       model_name, prompt_version, applied_plan_id, decided_at, created_at
                     """,
                     {**parameters, "plan_id": plan_id},
@@ -666,7 +711,7 @@ class PsycopgPlanProposalRepository:
                   and kind = 'profile_plan_proposal'
                   and decision_status = 'pending'
                 returning
-                  id, user_id, request_id, kind, decision_status, content,
+                  id, user_id, saved_job_id, request_id, kind, decision_status, content,
                   model_name, prompt_version, applied_plan_id, decided_at, created_at
                 """,
                 parameters,
@@ -712,6 +757,22 @@ class PsycopgPlanProposalRepository:
                 connection, user_id=user_id, plan_id=plan_id, lock=False
             )
         return self._stored_plan(row, items, achievements)
+
+    async def list_plans(self, *, user_id: UUID) -> PlanSummarySnapshot:
+        async with self._pool.connection() as connection:
+            plan_rows = await self._fetch_owned_plan_rows(connection, user_id=user_id)
+            user_exp = await self._fetch_read_user_exp(connection, user_id=user_id)
+            plans: list[StoredPlan] = []
+            for row in plan_rows:
+                plan_id = UUID(str(row["id"]))
+                items = await self._fetch_schedule_rows(
+                    connection, user_id=user_id, plan_id=plan_id, lock=False
+                )
+                achievements = await self._fetch_achievement_rows(
+                    connection, user_id=user_id, plan_id=plan_id, lock=False
+                )
+                plans.append(self._stored_plan(row, items, achievements))
+        return PlanSummarySnapshot(plans=plans, user_exp=user_exp)
 
     async def get_today_quests(self, *, user_id: UUID) -> TodayQuestSnapshot:
         async with self._pool.connection() as connection, connection.transaction():
@@ -1131,7 +1192,7 @@ class PsycopgPlanProposalRepository:
         cursor = await connection.execute(
             f"""
             select
-              id, user_id, request_id, kind, decision_status, content,
+              id, user_id, saved_job_id, request_id, kind, decision_status, content,
               model_name, prompt_version, applied_plan_id, decided_at, created_at
             from app.ai_results
             where user_id = %(user_id)s and id = %(proposal_id)s
@@ -1159,6 +1220,7 @@ class PsycopgPlanProposalRepository:
               p.activated_at, p.ended_at, p.restart_offer_status,
               p.restart_prompted_at, ua.role as account_role, ua.user_exp,
               ar.id as proposal_id,
+              ar.saved_job_id as proposal_saved_job_id,
               ar.request_id as proposal_request_id,
               ar.decision_status as proposal_decision_status,
               ar.content as proposal_content,
@@ -1182,6 +1244,42 @@ class PsycopgPlanProposalRepository:
             {"user_id": user_id, "plan_id": plan_id},
         )
         return await cursor.fetchone()
+
+    @staticmethod
+    async def _fetch_owned_plan_rows(
+        connection: Any,
+        *,
+        user_id: UUID,
+    ) -> list[Mapping[str, Any]]:
+        cursor = await connection.execute(
+            """
+            select
+              p.id, p.user_id, p.title, p.summary, p.goal_snapshot,
+              p.starts_on, p.ends_on, p.total_task_count, p.status,
+              p.activated_at, p.ended_at, p.restart_offer_status,
+              p.restart_prompted_at, ua.role as account_role, ua.user_exp,
+              ar.id as proposal_id,
+              ar.request_id as proposal_request_id,
+              ar.decision_status as proposal_decision_status,
+              ar.content as proposal_content,
+              ar.model_name as proposal_model_name,
+              ar.prompt_version as proposal_prompt_version,
+              ar.applied_plan_id as proposal_applied_plan_id,
+              ar.decided_at as proposal_decided_at,
+              ar.created_at as proposal_created_at
+            from app.plans p
+            join app.ai_results ar
+              on ar.user_id = p.user_id and ar.id = p.proposal_result_id
+             and ar.kind = 'profile_plan_proposal'
+             and ar.decision_status = 'applied'
+             and ar.applied_plan_id = p.id
+            join app.user_accounts ua on ua.id = p.user_id
+            where p.user_id = %(user_id)s
+            order by p.created_at desc, p.id desc
+            """,
+            {"user_id": user_id},
+        )
+        return list(await cursor.fetchall())
 
     @staticmethod
     async def _fetch_schedule_rows(
@@ -1473,6 +1571,7 @@ class PsycopgPlanProposalRepository:
                     "id": row["proposal_id"],
                     "user_id": row["user_id"],
                     "request_id": row["proposal_request_id"],
+                    "saved_job_id": row.get("proposal_saved_job_id"),
                     "decision_status": row["proposal_decision_status"],
                     "content": row["proposal_content"],
                     "model_name": row["proposal_model_name"],
@@ -1639,7 +1738,7 @@ class PsycopgPlanProposalRepository:
         cursor = await connection.execute(
             f"""
             select
-              id, user_id, request_id, kind, decision_status, content,
+              id, user_id, saved_job_id, request_id, kind, decision_status, content,
               model_name, prompt_version, applied_plan_id, decided_at, created_at
             from app.ai_results
             where user_id = %(user_id)s and request_id = %(request_id)s
@@ -1680,6 +1779,7 @@ class PsycopgPlanProposalRepository:
                     "id": row["id"],
                     "user_id": row["user_id"],
                     "request_id": row["request_id"],
+                    "saved_job_id": row.get("saved_job_id"),
                     "decision_status": row["decision_status"],
                     "content": row["content"],
                     "model_name": row["model_name"],
@@ -1694,7 +1794,11 @@ class PsycopgPlanProposalRepository:
 
     @staticmethod
     def _preflight(
-        row: Mapping[str, Any], *, active: bool, pending: Mapping[str, Any] | None
+        row: Mapping[str, Any],
+        *,
+        active: bool,
+        pending: Mapping[str, Any] | None,
+        saved_job_row: Mapping[str, Any] | None = None,
     ) -> PlanGenerationPreflight:
         try:
             snapshot = ProfileOnboardingData.model_validate(row)
@@ -1705,6 +1809,11 @@ class PsycopgPlanProposalRepository:
                 assessment_score=row["assessment_score"],
                 assessment_level=row["assessment_level"],
                 assessment_summary=row["assessment_summary"],
+                saved_job_snapshot=(
+                    SavedJobView.model_validate(saved_job_row)
+                    if saved_job_row is not None
+                    else None
+                ),
                 active_plan_exists=active,
                 pending_request_id=pending["request_id"] if pending is not None else None,
             )

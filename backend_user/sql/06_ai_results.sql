@@ -138,13 +138,28 @@ create table if not exists app.ai_results (
       (
         kind = 'profile_plan_proposal'
         and decision_status in ('pending', 'applied', 'rejected')
-        and saved_job_id is null
       )
       or
       (
         kind not in ('job_plan_proposal', 'profile_plan_proposal')
         and decision_status = 'not_applicable'
         and applied_plan_id is null
+      )
+    ),
+  constraint ai_results_profile_plan_proposal_saved_job_check
+    check (
+      kind <> 'profile_plan_proposal'
+      or (
+        saved_job_id is null
+        and (
+          not (content ? 'saved_job_snapshot')
+          or content -> 'saved_job_snapshot' = 'null'::jsonb
+        )
+      )
+      or (
+        saved_job_id is not null
+        and jsonb_typeof(content -> 'saved_job_snapshot') = 'object'
+        and content -> 'saved_job_snapshot' ->> 'id' = saved_job_id::text
       )
     ),
   constraint ai_results_decision_time_check
