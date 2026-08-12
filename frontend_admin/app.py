@@ -24,6 +24,12 @@ user_management_page = st.Page(
     icon="🗃️",
 )
 
+dashboard_page = st.Page(
+    "app_pages/dashboard.py",
+    title="대시보드",
+    icon="📊",
+)
+
 user_management_detail_page = st.Page(
     "app_pages/user_management_detail.py",
     title="사용자 관리 상세보기",
@@ -60,9 +66,10 @@ recruitment_notice_detail_page = st.Page(
     icon="",
 )
 
-
 navigation = st.navigation(
-    [start_page, user_management_page, user_management_detail_page, notice_page, loadmap_page, notice_detail_page],
+    [start_page, dashboard_page, user_management_page, user_management_detail_page, notice_page, loadmap_page, notice_detail_page,
+     recruitment_notice_page,recruitment_notice_detail_page
+     ],
     position="hidden",
 )
 
@@ -70,9 +77,11 @@ with st.sidebar:
     st.title("취업관리 MAP")   
     
     if is_logged_in():        
+        st.page_link(dashboard_page)
         st.page_link(user_management_page)
         st.page_link(loadmap_page)
         st.page_link(notice_page)
+        st.page_link(recruitment_notice_page)
         if st.button("로그아웃") :
             logout()
             st.switch_page(start_page)

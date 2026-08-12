@@ -14,9 +14,9 @@ st.subheader("사용자 관리", divider="rainbow")
 # ---------------------------------------------------------
 # Search / Filter Area
 # ---------------------------------------------------------
-search_col, role_col, status_col, button_col = st.columns(
-    [4, 1.5, 1.5, 1.3]
-)
+# search_col, role_col, status_col, button_col = st.columns([4, 1.5, 1.5, 1.3])
+
+search_col, role_col, status_col = st.columns([4, 1.5, 1.5])
 
 with search_col:
     keyword = st.text_input(
@@ -39,12 +39,12 @@ with status_col:
         label_visibility="collapsed"
     )
 
-with button_col:
-    add_user = st.button(
-        "＋ 사용자 추가",
-        type="primary",
-        use_container_width=True
-    )
+# with button_col:
+#     add_user = st.button(
+#         "＋ 사용자 추가",
+#         type="primary",
+#         use_container_width=True
+#     )
 
 user_infos = user_get_all_process()
 

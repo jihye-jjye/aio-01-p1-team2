@@ -15,6 +15,6 @@ with st.form("signup_form"):
         if admin_id and password:
             response = login(admin_id, password)
             # if response and response["access_token"] is not None:
-            st.switch_page("app_pages/user_management.py")
+            st.switch_page("app_pages/dashboard.py")
         else:
             st.warning("모든 항목을 입력해 주세요.")
