@@ -25,7 +25,7 @@ apply_admin_style()
 
 start_page = st.Page(
     "app_pages/start.py",
-    title="관리자 로그인",
+    title="대쉬",
     icon="🏠",
     default=True,
 )
@@ -69,13 +69,13 @@ notice_detail_page = st.Page(
 recruitment_notice_page = st.Page(
     "app_pages/recruitment_notice.py",
     title="채용공고 관리",
-    icon="",
+    icon="🏢",
 )
 
 recruitment_notice_detail_page = st.Page(
     "app_pages/recruitment_notice_detail.py",
     title="채용공고 등록/편집",
-    icon="",
+    icon="🏢",
 )
 
 navigation = st.navigation(
@@ -93,8 +93,10 @@ with st.sidebar:
         st.markdown('<span class="admin-status">관리자 로그인 중</span>', unsafe_allow_html=True)
         st.caption(st.session_state.get("user_id") or "인증된 관리자")
         st.divider()
+        st.page_link(dashboard_page, label="대쉬보드", icon="🏠")
         st.page_link(user_management_page, label="사용자 관리", icon="👥")
         st.page_link(loadmap_page, label="로드맵 관리", icon="🗺️")
+        st.page_link(recruitment_notice_page, label="채용공고 관리", icon="🏢")
         st.page_link(notice_page, label="공지사항 관리", icon="📢")
         st.divider()
         if st.button("로그아웃", use_container_width=True):

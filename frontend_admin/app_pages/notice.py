@@ -19,29 +19,57 @@ page_header(
     "서비스에 등록된 공지 내용을 확인하고 운영 상태를 점검하세요.",
 )
 
+import streamlit as st
+from clients.notice_client import notice_all_process
+from core.api_client import BackendAPIError
+
 try:
-    with st.spinner("공지사항을 불러오고 있어요..."):
-        response = notice_all_process()
-    if isinstance(response, dict):
-        notices = response.get("items") or response.get("notices") or []
-    elif isinstance(response, list):
-        notices = response
-    else:
-        notices = []
-except BackendAPIError as error:
-    st.error(f"공지사항을 불러오지 못했습니다. {error}")
-    st.stop()
-
-st.metric("등록된 공지", f"{len(notices)}개")
-st.divider()
-
-if not notices:
-    with st.container(border=True):
-        st.subheader("등록된 공지사항이 없습니다")
-        st.caption("공지 작성 API가 연결되면 이곳에서 등록과 관리 기능을 제공할 수 있어요.")
-else:
-    for notice in notices:
+    response = notice_all_process()
+    if response is not None:
         with st.container(border=True):
-            st.subheader(str(notice.get("title") or "제목 없는 공지"))
-            st.caption(str(notice.get("created_at") or notice.get("published_at") or ""))
-            st.write(str(notice.get("content") or notice.get("message") or "내용 없음"))
+            # ID / 이름 / 아이디 / 역할 / 레벨 / 상태 / 가입일 / 관리
+            column_widths = [2.0, 1.0, 1.2, 1.2, 1.8]
+
+            # 헤더
+            header_cols = st.columns(column_widths)
+            headers = ["ID", "제목", "가입일", "수정일", "관리"]
+
+            for col, header in zip(header_cols, headers):
+                col.markdown(f'<div class="table-head">{header}</div>', unsafe_allow_html=True)
+
+            st.divider()
+
+            # 행
+            for item in response["items"]:
+                row_cols = st.columns(column_widths)
+                row_cols[0].write(item["id"])
+                row_cols[1].write(item["title"])
+                # row_cols[2].write(item["content"])      
+                row_cols[2].write(item["created_at"])
+                row_cols[3].write(item["updated_at"] if item["updated_at"] is not None else "")
+
+                # 마지막 '관리' 컬럼
+                with row_cols[4]:
+                    edit_col, delete_col = st.columns(2)
+
+                    with edit_col:
+                        if st.button(
+                            "수정",
+                            key=f"user-edit-{item['id']}",
+                            use_container_width=True):                    
+                            st.session_state.selected_item_notice_id = item["id"]
+                            # 여기서 수정 페이지 또는 수정 폼을 열기
+                            st.switch_page("app_pages/notice_detail.py")
+
+                    with delete_col:
+                        if st.button(
+                            "삭제",
+                            key=f"user-delete-{item['id']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state.delete_notice_id = item["id"]
+                            # 여기서 삭제 확인창 또는 삭제 API 호출
+
+                st.divider()
+except BackendAPIError as error:
+    st.warning(str(error))

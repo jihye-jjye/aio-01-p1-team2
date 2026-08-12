@@ -29,11 +29,13 @@ else:
                 admin_id = st.text_input(
                     "관리자 아이디",
                     placeholder="admin ID",
+                    value="admin01"
                 )
                 password = st.text_input(
                     "비밀번호",
                     type="password",
                     placeholder="비밀번호를 입력하세요",
+                    value="Ah159#h!"
                 )
                 submitted = st.form_submit_button(
                     "관리자 로그인",
