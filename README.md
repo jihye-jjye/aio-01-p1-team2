@@ -18,7 +18,7 @@ Frontend/Rich CLI의 요청이 FastAPI 도메인 서비스를 거쳐 PostgreSQL�
 
 [![AI 취업 코치 데이터베이스 구조도](backend_user/docs/images/database-structure.png)](backend_user/docs/images/database-structure.png)
 
-Supabase PostgreSQL 17.6의 private `app` 스키마를 기준으로 한 구조입니다. 9개 테이블, 127개 컬럼, 16개 외래 키와 전체 테이블의 RLS 적용 상태를 포함합니다.
+Supabase PostgreSQL 17.6의 private `app` 스키마를 기준으로 한 구조입니다. 2026-08-11 실DB 점검 당시 9개 테이블, 127개 컬럼, 16개 외래 키와 전체 테이블의 RLS 적용을 확인했습니다. 현재 원격 DB 상태는 배포 전에 다시 확인해야 합니다.
 
 ## 프로젝트 한눈에 보기
 
@@ -36,13 +36,42 @@ AI 취업 코치는 사용자의 목표를 단순히 기록하는 데서 끝나�
   → 관리자 화면에서 사용자·로드맵·공지 조회
 ```
 
+### 사용자 성장 캐릭터 예시
+
+퀘스트 수행과 EXP 누적에 따른 사용자 성장 상태를 친근하게 전달하기 위한 AI 코치 캐릭터 예시입니다. 현재 저장소의 UI 자산이며, 실제 레벨별 EXP 기준과 화면 적용 규칙은 사용자 화면 연동 시 확정합니다.
+
+<table>
+  <tr>
+    <th>Level 1 · 취업 준비 시작</th>
+    <th>Level 2 · 역량 탐색</th>
+    <th>Level 3 · 집중 성장</th>
+    <th>Level 4 · 목표 달성</th>
+  </tr>
+  <tr>
+    <td><img src="docs/revised/assets/character_level_1.png" alt="취업 준비를 시작한 레벨 1 AI 코치 캐릭터" width="190"></td>
+    <td><img src="docs/revised/assets/character_level_2.png" alt="역량을 탐색하는 레벨 2 AI 코치 캐릭터" width="190"></td>
+    <td><img src="docs/revised/assets/character_level_3.png" alt="집중 성장 단계의 레벨 3 AI 코치 캐릭터" width="190"></td>
+    <td><img src="docs/revised/assets/character_level_4.png" alt="목표를 달성한 레벨 4 AI 코치 캐릭터" width="190"></td>
+  </tr>
+</table>
+
+캐릭터는 사용자 홈·대시보드·프로필에서 현재 성장 단계를 나타내고, 퀘스트 완료나 일일 목표 달성 시 다음 단계로 성장하는 시각적 피드백에 활용할 수 있습니다.
+
+#### 캐릭터 성장 애니메이션 예시
+
+퀘스트 완료와 EXP 누적에 따른 성장 과정을 사용자에게 보여주는 애니메이션 예시입니다.
+
+<p align="center">
+  <img src="docs/revised/assets/gif.gif" alt="퀘스트 완료와 EXP 누적에 따른 AI 코치 캐릭터 성장 애니메이션" width="520">
+</p>
+
 ## 시스템 구성
 
 | 구성 요소 | 역할 | 주요 기술 |
 |---|---|---|
 | [`frontend_user/`](frontend_user/) | 로그인, AI 프로필 분석, 대시보드, 로드맵, 오늘 할 일, 맞춤 공고, AI 상담 | Streamlit, httpx, pandas, matplotlib |
 | [`backend_user/`](backend_user/) | 인증, 온보딩, 프로필, 계획·퀘스트·EXP, 알림, 공고 추천, AI 상담 API | FastAPI, Pydantic, psycopg, Redis, Gemini, JWT |
-| [`frontend_admin/`](frontend_admin/) | 관리자 로그인, 사용자 목록·상세, 사용자별 로드맵, 공지사항 조회 | Streamlit, httpx, pandas |
+| [`frontend_admin/`](frontend_admin/) | 관리자 로그인, 운영 대시보드, 사용자 목록·상세, 사용자별 로드맵, 공지와 저장 공고 조회 | Streamlit, httpx, pandas, Altair |
 | [`backend_admin/`](backend_admin/) | 관리자 인증, 사용자 관리, 공지 CRUD, 대시보드, 공고, AI 로그·KPI API | FastAPI, Pydantic, Supabase, JWT |
 | Supabase PostgreSQL | 계정·프로필·로드맵·일정·EXP·알림·AI 결과 영속 저장 | PostgreSQL 17.6, private schema, RLS |
 | Upstash Redis | 온보딩·상담 세션, refresh token, checkpoint, lock, rate limit | Redis, TTL |
@@ -57,7 +86,8 @@ AI 취업 코치는 사용자의 목표를 단순히 기록하는 데서 끝나�
 - 전체 채용 공고 조회, 사용자 프로필 기반 맞춤 공고 추천
 - Redis 세션과 구조화 보고서를 사용하는 AI 취업 코치 상담
 - 로그인 시 로드맵 일정·변경 알림 동기화와 공지 조회
-- 관리자용 사용자·로드맵·공지·운영 지표·AI 로그 관리 API
+- 관리자용 사용자·로드맵·공지·운영 지표·저장 공고 조회 API
+- AI 로그·KPI·피드백 API 계층(필요 DB migration과 관리자 로그 화면은 미완성)
 
 ## API 한눈에 보기
 
@@ -87,6 +117,7 @@ API 명세와 공통 연동 문서는 현재 구현 기준입니다. `초기 예
 - [프론트엔드–백엔드 연동 운영 문서](docs/FRONTEND_BACKEND_INTEGRATION.md): 서비스 URL, API 계약, 환경 변수, 배포와 검증 절차
 - [Render 배포 Blueprint](render.yaml): 사용자·관리자 FastAPI 서비스의 빌드, 실행 명령과 환경 변수
 - [통합 수정 설계](docs/designs/2026-08-11-integration-fix-design.md) · [통합 수정 계획](docs/plans/2026-08-11-integration-fix.md)
+- [최종 프로젝트 문서](docs/revised/Project_README.md) · [API 명세](docs/revised/API명세서.md) · [화면 설계](docs/revised/화면설계.md) · [DB 설계](docs/revised/데이터베이스설계.md) · [대시보드 결과](docs/revised/대시보드_구현결과.md)
 
 서비스 간 URL과 API 계약은 공통 연동 운영 문서와 사용자·관리자 API 명세를 기준으로 확인합니다.
 
@@ -100,7 +131,7 @@ API 명세와 공통 연동 문서는 현재 구현 기준입니다. `초기 예
 | AI | Gemini, Google GenAI SDK, Rich CLI |
 | Auth & Security | JWT access/refresh token, Argon2, RLS |
 | Test & Quality | pytest, pytest-asyncio, Ruff |
-| Deployment | Render, Streamlit Community Cloud |
+| Deployment | Render(백엔드 2개), 프론트엔드는 로컬 또는 별도 Streamlit 배포 필요 |
 
 ## 로컬 실행
 
@@ -180,6 +211,15 @@ pytest -q
 └── render.yaml         # 두 백엔드의 Render 배포 설정
 ```
 
+## 현재 제한사항
+
+- 관리자 공지 생성·수정·삭제, 사용자 상태 변경·삭제는 백엔드 API가 있으나 관리자 화면에 완전히 연결되지 않았습니다.
+- 관리자 저장 공고 기능은 현재 목록·상세 조회 전용입니다.
+- AI 로그·KPI·피드백 Router·Service·Repository 코드는 있으나 `app.ai_logs`, `app.admin_log_summary`, `app.feedback`의 재현 가능한 migration과 관리자 로그 화면이 없습니다.
+- 프로젝트 진행 가이드의 실시간 로그 수집·자동 갱신·시각화 흐름은 아직 end-to-end로 완성되지 않았습니다.
+- `render.yaml`은 두 FastAPI 백엔드만 정의합니다. 공개 Streamlit 프론트엔드 URL은 저장소에서 확정되지 않았습니다.
+- 배포 URL과 원격 Supabase 상태는 최종 시연 전에 다시 검증해야 합니다.
+
 ---
 
-문서 기준일: 2026-08-11
+문서 기준일: 2026-08-12
