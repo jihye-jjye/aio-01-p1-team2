@@ -7,6 +7,7 @@ import streamlit as st
 from clients.auth_client import delete_me, update_me
 from core.api_client import BackendAPIError
 from core.session import clear_auth_state, is_logged_in, persist_auth_state
+from core.styles import apply_user_page_background, render_page_header
 
 
 LOGIN_ID_PATTERN = re.compile(r"^[a-z0-9._-]{4,50}$")
@@ -35,19 +36,25 @@ def validate_values(
     normalized_login_id = login_id.strip().casefold()
     normalized_user_name = user_name.strip()
 
-    if not normalized_login_id:
-        errors.append("아이디를 입력해 주세요.")
-    elif not LOGIN_ID_PATTERN.fullmatch(normalized_login_id):
+    # 백엔드는 아이디와 이름 중 한 항목만 보내는 부분 수정을 허용합니다.
+    # 따라서 입력한 항목만 형식을 검사하고, 두 항목이 모두 비었을 때만 막습니다.
+    if normalized_login_id and not LOGIN_ID_PATTERN.fullmatch(normalized_login_id):
         errors.append("아이디는 영문 소문자, 숫자, 점, 밑줄, 하이픈으로 4~50자여야 합니다.")
 
-    if not normalized_user_name:
-        errors.append("이름을 입력해 주세요.")
-    elif len(normalized_user_name) > 50:
+    if normalized_user_name and len(normalized_user_name) > 50:
         errors.append("이름은 50자 이하로 입력해 주세요.")
 
-    if (
-        normalized_login_id == original_login_id
-        and normalized_user_name == original_user_name
+    if not normalized_login_id and not normalized_user_name:
+        errors.append("수정할 아이디 또는 이름을 입력해 주세요.")
+
+    login_id_changed = bool(
+        normalized_login_id and normalized_login_id != original_login_id
+    )
+    user_name_changed = bool(
+        normalized_user_name and normalized_user_name != original_user_name
+    )
+    if (normalized_login_id or normalized_user_name) and not (
+        login_id_changed or user_name_changed
     ):
         errors.append("변경된 내용이 없습니다.")
 
@@ -68,12 +75,14 @@ def submit_update(
     result = update_me(
         login_id=(
             normalized_login_id
-            if normalized_login_id != original_login_id
+            if normalized_login_id
+            and normalized_login_id != original_login_id
             else None
         ),
         user_name=(
             normalized_user_name
-            if normalized_user_name != original_user_name
+            if normalized_user_name
+            and normalized_user_name != original_user_name
             else None
         ),
     )
@@ -102,21 +111,26 @@ def render_delete_account() -> None:
             delete_submitted = st.form_submit_button(
                 "계정 영구 삭제",
                 use_container_width=True,
-                disabled=confirmation.strip() != "회원탈퇴",
             )
 
         if delete_submitted:
-            try:
-                with st.spinner("계정 정보를 삭제하고 있어요..."):
-                    delete_me()
-                clear_auth_state()
-                st.switch_page("app_pages/home.py")
-            except BackendAPIError as error:
-                show_error(error)
+            if confirmation.strip() != "회원탈퇴":
+                st.warning("탈퇴를 진행하려면 회원탈퇴를 정확히 입력해 주세요.")
+            else:
+                try:
+                    with st.spinner("계정 정보를 삭제하고 있어요..."):
+                        delete_me()
+                    clear_auth_state()
+                    st.switch_page("app_pages/home.py")
+                except BackendAPIError as error:
+                    show_error(error)
 
 
 def main() -> None:
     """사용자 정보 수정 화면을 표시합니다."""
+
+    # 로그인 이후 다른 사용자 페이지와 같은 배경과 상단 간격을 사용합니다.
+    apply_user_page_background()
 
     if not is_logged_in():
         st.warning("로그인이 필요한 페이지입니다.")
@@ -124,9 +138,11 @@ def main() -> None:
             st.switch_page("app_pages/login.py")
         return
 
-    st.caption("ACCOUNT SETTINGS")
-    st.title("사용자 정보 수정")
-    st.caption("로그인 아이디와 서비스에서 사용할 이름을 변경할 수 있어요.")
+    render_page_header(
+        "ACCOUNT SETTINGS",
+        "사용자 정보 수정",
+        "로그인 아이디와 서비스에서 사용할 이름을 변경할 수 있어요.",
+    )
 
     flash_message = st.session_state.pop("account_settings_flash", None)
     if flash_message:
@@ -141,7 +157,7 @@ def main() -> None:
             login_id = st.text_input(
                 "아이디",
                 value=original_login_id,
-                placeholder="영문 소문자와 숫자 4자 이상",
+                placeholder="4자 이상",
                 max_chars=50,
             )
             user_name = st.text_input(
@@ -178,9 +194,6 @@ def main() -> None:
                 st.rerun()
             except BackendAPIError as error:
                 show_error(error)
-
-    if st.button("대시보드로 돌아가기", use_container_width=True):
-        st.switch_page("app_pages/dashboard.py")
 
     render_delete_account()
 

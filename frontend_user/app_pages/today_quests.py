@@ -1,10 +1,41 @@
 """오늘 완료할 취업 준비 미션과 EXP를 보여주는 페이지입니다."""
 
+from pathlib import Path
+
 import streamlit as st
 
 from clients.quest_client import get_today_quests, update_today_quest
 from core.api_client import BackendAPIError
 from core.session import is_logged_in
+from core.styles import apply_user_page_background, render_page_header
+
+
+QUEST_COMPLETE_IMAGE = (
+    Path(__file__).resolve().parents[1] / "assets" / "quest_complete.png"
+)
+
+
+def apply_today_quest_style() -> None:
+    """오늘 진행률 카드의 상태 알림을 서비스의 핑크 톤으로 맞춥니다."""
+
+    st.markdown(
+        """
+        <style>
+        .stApp div[data-testid="stAlert"] {
+            background: #ffffff !important;
+            border: 1px solid #ec8fbe !important;
+            border-radius: 10px !important;
+        }
+        .stApp div[data-testid="stAlert"] p,
+        .stApp div[data-testid="stAlert"] svg {
+            color: #a81763 !important;
+            fill: #a81763 !important;
+            font-weight: 700 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def initialize_state() -> None:
@@ -15,6 +46,8 @@ def initialize_state() -> None:
         "today_quests_loaded": False,
         "today_quests_busy": False,
         "today_quests_flash": None,
+        "today_quests_user_id": None,
+        "today_quests_completion_popup": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -46,10 +79,13 @@ def show_error(error: BackendAPIError) -> None:
     st.error(messages.get(error.code, error.message))
 
 
-def load_today_quests() -> None:
+def load_today_quests(user_id: str) -> None:
     """백엔드에서 오늘 할 일 정보를 불러옵니다."""
 
     st.session_state.today_quests_data = get_today_quests()
+    # 다른 계정으로 로그인했을 때 이전 사용자의 캐시를 재사용하지 않도록
+    # 이 데이터를 불러온 사용자 ID를 함께 저장합니다.
+    st.session_state.today_quests_user_id = user_id
     st.session_state.today_quests_loaded = True
 
 
@@ -59,9 +95,11 @@ def render_header(today: dict) -> None:
     title_column, exp_column = st.columns([4, 1])
 
     with title_column:
-        st.caption("TODAY'S CAREER QUEST")
-        st.title("오늘의 할 일")
-        st.caption("오늘의 작은 미션을 완료하고 취업 목표에 한 걸음 더 가까워지세요.")
+        render_page_header(
+            "TODAY'S CAREER QUEST",
+            "오늘의 할 일",
+            "오늘의 작은 미션을 깨고 목표에 한 걸음 더 가까워져요.",
+        )
 
     with exp_column:
         # EXP는 프론트에서 계산하지 않고 백엔드 응답값을 그대로 표시합니다.
@@ -77,24 +115,39 @@ def render_progress(today: dict, flash_message: str | None = None) -> None:
     total = int(today.get("total_count") or 0)
     percent = clamp_percent(today.get("percent"))
 
-    with st.container(border=True):
+    with st.container(border=True, key="today_progress_card"):
         left_column, right_column = st.columns([4, 1])
-        left_column.subheader(str(today.get("plan_title") or "오늘의 커리어 미션"))
+        # 백엔드가 반환한 실제 percent 값을 진행률의 대표 지표로 표시합니다.
+        left_column.metric("오늘의 진행률", f"{percent}%")
         right_column.metric("완료", f"{completed} / {total}")
 
         st.progress(percent / 100)
-        st.caption(f"오늘 진행률 {percent}%")
 
-        # 완료 결과 메시지는 페이지 상단이 아니라 오늘 진행률 카드 안에 표시합니다.
+        # 일반 상태 변경 메시지만 진행률 카드 안에 표시합니다.
+        # 모든 미션 완료 메시지는 별도의 중앙 팝업에서 보여줍니다.
         if flash_message:
-            st.success(flash_message)
+            st.info(flash_message)
 
-        if today.get("achieved"):
-            earned_exp = int(today.get("earned_exp") or 0)
-            if not flash_message:
-                st.success(f"오늘의 미션 완료! +{earned_exp} EXP")
-        else:
+        if not today.get("achieved"):
             st.caption("오늘의 모든 할 일을 완료하면 20 EXP를 받을 수 있어요.")
+
+
+@st.dialog("QUEST CLEAR!", width="small")
+def render_completion_popup(exp: int) -> None:
+    """오늘의 모든 미션을 완료한 순간 축하 이미지와 EXP를 보여줍니다."""
+
+    if QUEST_COMPLETE_IMAGE.exists():
+        image_left, image_column, image_right = st.columns([1, 2, 1])
+        with image_column:
+            st.image(str(QUEST_COMPLETE_IMAGE), use_container_width=True)
+
+    st.subheader("오늘의 모든 미션 완료!")
+    st.metric("획득 경험치", f"+{exp} EXP")
+    st.caption("오늘도 목표에 한 걸음 더 가까워졌어요.")
+
+    if st.button("확인", type="primary", use_container_width=True):
+        st.session_state.today_quests_completion_popup = None
+        st.rerun()
 
 
 def change_quest_status(quest: dict) -> None:
@@ -118,7 +171,11 @@ def change_quest_status(quest: dict) -> None:
         # exp_delta는 이번 요청으로 실제 변경된 EXP입니다.
         exp_delta = int(result.get("exp_delta") or 0)
         if exp_delta > 0:
-            message = f"오늘의 모든 미션 완료! +{exp_delta} EXP"
+            # 마지막 미션 완료 시 한 번만 중앙 축하 팝업을 표시합니다.
+            st.session_state.today_quests_completion_popup = {
+                "exp": exp_delta,
+            }
+            message = None
         elif exp_delta < 0:
             message = f"완료 취소로 {exp_delta} EXP가 반영되었어요."
         elif next_status == "completed":
@@ -156,13 +213,11 @@ def render_quest_card(quest: dict, index: int) -> None:
             if description:
                 st.caption(description)
 
-            if is_completed:
-                st.success("완료")
-            else:
+            if not is_completed:
                 st.caption("진행 전")
 
         with button_column:
-            label = "완료 취소" if is_completed else "완료하기"
+            label = "완료 취소하기" if is_completed else "완료하기"
             if st.button(
                 label,
                 key=f'today_quest_{quest.get("id", index)}',
@@ -191,8 +246,11 @@ def render_empty_state(today: dict) -> None:
 def render_profile_required() -> None:
     """취업 프로필이 없는 사용자에게 AI 프로필 작성을 안내합니다."""
 
-    st.caption("TODAY'S CAREER QUEST")
-    st.title("오늘의 할 일")
+    render_page_header(
+        "TODAY'S CAREER QUEST",
+        "오늘의 할 일",
+        "오늘의 작은 미션을 깨고 목표에 한 걸음 더 가까워져요.",
+    )
 
     with st.container(border=True):
         st.subheader("취업 프로필을 먼저 만들어 주세요")
@@ -231,6 +289,8 @@ def main() -> None:
     """로그인 상태와 API 결과에 따라 오늘 할 일 페이지를 보여줍니다."""
 
     initialize_state()
+    apply_user_page_background()
+    apply_today_quest_style()
 
     if not is_logged_in():
         st.warning("로그인이 필요한 페이지입니다.")
@@ -238,12 +298,27 @@ def main() -> None:
             st.switch_page("app_pages/login.py")
         return
 
+    current_user = st.session_state.get("user") or {}
+    current_user_id = str(
+        current_user.get("id") or current_user.get("user_id") or ""
+    )
+
+    # Streamlit 세션에 다른 사용자의 오늘 할 일 캐시가 남아 있으면
+    # 화면에 표시하기 전에 폐기하고 현재 토큰으로 다시 조회합니다.
+    cached_user_id = str(st.session_state.get("today_quests_user_id") or "")
+    if st.session_state.today_quests_loaded and cached_user_id != current_user_id:
+        st.session_state.today_quests_data = None
+        st.session_state.today_quests_loaded = False
+        st.session_state.today_quests_flash = None
+        st.session_state.today_quests_user_id = None
+        st.session_state.today_quests_completion_popup = None
+
     flash_message = st.session_state.pop("today_quests_flash", None)
 
     if not st.session_state.today_quests_loaded:
         try:
             with st.spinner("오늘의 할 일을 불러오고 있어요..."):
-                load_today_quests()
+                load_today_quests(current_user_id)
         except BackendAPIError as error:
             if error.code in {"PROFILE_NOT_FOUND", "ONBOARDING_REQUIRED"}:
                 render_profile_required()
@@ -254,6 +329,10 @@ def main() -> None:
                 st.session_state.today_quests_loaded = False
                 st.rerun()
             return
+
+    completion_popup = st.session_state.get("today_quests_completion_popup")
+    if completion_popup:
+        render_completion_popup(int(completion_popup.get("exp") or 0))
 
     render_content(st.session_state.today_quests_data or {}, flash_message)
 

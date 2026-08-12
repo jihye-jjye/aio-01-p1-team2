@@ -6,7 +6,7 @@ import streamlit as st
 
 from clients.auth_client import signup
 from core.api_client import BackendAPIError
-from core.session import persist_auth_state, save_auth_tokens
+from core.session import save_auth_tokens
 
 
 LOGIN_ID_PATTERN = re.compile(r"^[a-z0-9._-]{4,50}$")
@@ -17,6 +17,11 @@ def apply_signup_style() -> None:
     st.markdown(
         """
         <style>
+        section[data-testid="stSidebar"],
+        button[data-testid="stBaseButton-headerNoPadding"],
+        [data-testid="collapsedControl"] {
+            display: none !important;
+        }
         .stApp {
             background: #ffffff;
             color: #111827;
@@ -172,8 +177,6 @@ def handle_signup(
             "user_name": user_name.strip(),
             "role": "user",
         }
-        persist_auth_state()
-
     except BackendAPIError as error:
         show_signup_error(error, message_area)
         return

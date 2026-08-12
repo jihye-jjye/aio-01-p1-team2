@@ -1,15 +1,27 @@
 import streamlit as st
+from streamlit_session_browser_storage import SessionStorage
 
-from core.auth import init_state, is_logged_in, logout
+from core.auth_service import logout
+from core.session_storage import is_logged_in
+from core.styles import apply_admin_style
 
 
 st.set_page_config(
-    page_title="취업 관리 MAP 관리자",
-    page_icon="📚",
+    page_title="AI 취업 코치 관리자",
+    page_icon="🛡️",
     layout="wide",
 )
 
-init_state()
+storage = SessionStorage()
+if st.session_state.get("access_token"):
+    storage.setItem("login_id", st.session_state.get("user_id", ""), key="save_login_id")
+    storage.setItem(
+        "access_token",
+        st.session_state.access_token,
+        key="save_access_token",
+    )
+
+apply_admin_style()
 
 start_page = st.Page(
     "app_pages/start.py",
@@ -57,13 +69,13 @@ notice_detail_page = st.Page(
 recruitment_notice_page = st.Page(
     "app_pages/recruitment_notice.py",
     title="채용공고 관리",
-    icon="",
+    icon="🏢",
 )
 
 recruitment_notice_detail_page = st.Page(
     "app_pages/recruitment_notice_detail.py",
     title="채용공고 등록/편집",
-    icon="",
+    icon="🏢",
 )
 
 navigation = st.navigation(
@@ -74,21 +86,23 @@ navigation = st.navigation(
 )
 
 with st.sidebar:
-    st.title("취업관리 MAP")   
+    st.markdown('<div class="admin-brand">AI 취업 코치</div>', unsafe_allow_html=True)
+    st.caption("ADMIN CONSOLE")
     
     if is_logged_in():        
-        st.page_link(dashboard_page)
-        st.page_link(user_management_page)
-        st.page_link(loadmap_page)
-        st.page_link(notice_page)
-        st.page_link(recruitment_notice_page)
-        if st.button("로그아웃") :
+        st.markdown('<span class="admin-status">관리자 로그인 중</span>', unsafe_allow_html=True)
+        st.caption(st.session_state.get("user_id") or "인증된 관리자")
+        st.divider()
+        st.page_link(dashboard_page, label="대쉬보드", icon="🏠")
+        st.page_link(user_management_page, label="사용자 관리", icon="👥")
+        st.page_link(loadmap_page, label="로드맵 관리", icon="🗺️")
+        st.page_link(recruitment_notice_page, label="채용공고 관리", icon="🏢")
+        st.page_link(notice_page, label="공지사항 관리", icon="📢")
+        st.divider()
+        if st.button("로그아웃", use_container_width=True):
             logout()
             st.switch_page(start_page)
-        
-        st.divider()
     else:
-        # st.page_link(start_page)    
-        st.text("로그인 하여 관리자 기능을 이용하세요.")
+        st.caption("관리자 로그인이 필요합니다.")
 
 navigation.run()
