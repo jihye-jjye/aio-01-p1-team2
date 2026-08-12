@@ -11,6 +11,12 @@ import streamlit as st
 from clients.job_client import get_recommended_job
 from core.api_client import BackendAPIError
 from core.session import is_logged_in
+from core.styles import apply_user_page_background, render_page_header
+
+
+JOB_HIRING_IMAGE = (
+    Path(__file__).resolve().parents[1] / "assets" / "job_hiring_board.png"
+)
 
 
 def initialize_state() -> None:
@@ -20,17 +26,26 @@ def initialize_state() -> None:
         "jobs_loaded": False,
         "recommended_job": None,
         "jobs_error": None,
-        "plan_update_preview": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
 
-def load_recommendation(force: bool = False) -> None:
+def render_header() -> None:
+    """로드맵 페이지와 같은 구조로 추천 공고 페이지 제목을 표시합니다."""
+
+    render_page_header(
+        "AI JOB MATCH",
+        "AI 추천 공고",
+        "내 프로필을 읽고, 지금 지원해 볼 만한 포지션만 골랐어요.",
+    )
+
+
+def load_recommendation() -> None:
     """희망 근무 환경 기반 추천 공고 한 건을 백엔드에서 조회합니다."""
 
-    if st.session_state.jobs_loaded and not force:
+    if st.session_state.jobs_loaded:
         return
 
     st.session_state.jobs_error = None
@@ -137,18 +152,6 @@ def gap_analysis(recommendation: dict, job: dict) -> dict:
     }
 
 
-def roadmap_update_items(analysis: dict) -> list[str]:
-    """GAP 분석에서 로드맵 미리보기에 표시할 보완 항목을 만듭니다."""
-
-    if analysis["missing_skills"]:
-        return [f"{skill} 실습" for skill in analysis["missing_skills"]]
-    if analysis["recommendation"]:
-        return [analysis["recommendation"]]
-    if analysis["missing_summary"]:
-        return [analysis["missing_summary"]]
-    return []
-
-
 def render_match_chart(score: int) -> None:
     """추천 점수를 도넛형 적합도 그래프로 표시합니다."""
 
@@ -201,38 +204,6 @@ def show_api_error(error: BackendAPIError) -> None:
         st.error(f"추천 공고를 불러오지 못했어요. {error.message}")
 
 
-def render_plan_update_preview(job: dict, analysis: dict) -> None:
-    """공고 보완 역량을 로드맵에 추가하기 전 미리 보여줍니다."""
-
-    preview = st.session_state.get("plan_update_preview")
-    if not preview:
-        return
-
-    st.divider()
-    st.caption("PLAN UPDATE · PREVIEW")
-    st.subheader("로드맵이 이렇게 달라져요")
-    update_items = roadmap_update_items(analysis)
-    with st.container(border=True):
-        for item in update_items:
-            st.write(f"✨ {item}")
-        st.caption(f"새로운 Quest {len(update_items)}개")
-
-    confirm_column, cancel_column = st.columns(2)
-    with confirm_column:
-        if st.button("변경된 로드맵 보기", type="primary", use_container_width=True):
-            st.session_state.roadmap_job_updates = {
-                "company_name": job.get("company_name"),
-                "job_title": job.get("job_title"),
-                "tasks": update_items,
-            }
-            st.session_state.plan_update_preview = None
-            st.switch_page("app_pages/roadmap.py")
-    with cancel_column:
-        if st.button("변경 취소", use_container_width=True):
-            st.session_state.plan_update_preview = None
-            st.rerun()
-
-
 def render_recommendation(recommendation: dict) -> None:
     """추천 공고와 백엔드 GAP 분석 결과를 카드로 표시합니다."""
 
@@ -257,15 +228,16 @@ def render_recommendation(recommendation: dict) -> None:
         "근무지역 미정",
     )
 
-    st.subheader("추천 공고")
-    st.caption("프로필과 공고 요구사항을 비교한 AI 추천 결과입니다.")
-
     with st.container(border=True):
         logo_column, job_column, deadline_column, source_column = st.columns(
-            [0.7, 3.5, 0.8, 1.3],
+            [0.9, 3.5, 0.8, 1.3],
             vertical_alignment="center",
         )
-        logo_column.markdown(f"## {company_name[:1].upper()}")
+        with logo_column:
+            if JOB_HIRING_IMAGE.exists():
+                st.image(str(JOB_HIRING_IMAGE), use_container_width=True)
+            else:
+                st.write("💼")
         with job_column:
             st.caption("AI PICK")
             st.subheader(job.get("job_title") or "직무명 미정")
@@ -290,7 +262,7 @@ def render_recommendation(recommendation: dict) -> None:
         with analysis_column:
             st.write(f"**AI 적합도 {score}점**")
             if score > 0:
-                st.markdown("#### 내 근무 취향과 잘 맞는 포지션이에요")
+                st.markdown("#### 지금 나에게 적절한 포지션이에요")
             else:
                 st.markdown("#### 최신 공고를 먼저 보여드렸어요")
             if preferred_environment:
@@ -328,33 +300,32 @@ def render_recommendation(recommendation: dict) -> None:
                 st.caption(source_label)
                 st.write(analysis["recommendation"])
 
-        if analysis["available"] and roadmap_update_items(analysis):
-            if st.button("내 계획에 반영하기", type="primary", use_container_width=True):
-                st.session_state.plan_update_preview = {
-                    "job_title": job.get("job_title"),
-                    "missing_skills": roadmap_update_items(analysis),
-                }
-                st.rerun()
-        else:
-            st.button(
-                "내 계획에 반영하기",
-                disabled=True,
+        st.divider()
+        roadmap_column, today_column = st.columns(2)
+        with roadmap_column:
+            if st.button(
+                "내 로드맵 확인하기",
+                type="primary",
                 use_container_width=True,
-                help="GAP 분석 API 연결 후 사용할 수 있어요.",
-            )
-
-    render_plan_update_preview(job, analysis)
+            ):
+                st.switch_page("app_pages/roadmap.py")
+        with today_column:
+            if st.button("오늘의 할 일 보기", use_container_width=True):
+                st.switch_page("app_pages/today_quests.py")
 
 
 def main() -> None:
     """로그인 상태에 따라 실제 추천 공고 화면을 실행합니다."""
 
     initialize_state()
+    apply_user_page_background()
     if not is_logged_in():
         st.warning("로그인하면 내 프로필에 맞는 공고를 추천받을 수 있어요.")
         if st.button("로그인으로 이동", type="primary"):
             st.switch_page("app_pages/login.py")
         return
+
+    render_header()
 
     if not st.session_state.jobs_loaded:
         with st.spinner("AI가 내 프로필과 공고를 비교하고 있어요..."):
@@ -363,17 +334,11 @@ def main() -> None:
     error = st.session_state.jobs_error
     if error:
         show_api_error(error)
-        if st.button("다시 불러오기"):
-            load_recommendation(force=True)
-            st.rerun()
         return
 
     recommendation = st.session_state.recommended_job
     if not recommendation:
         st.info("현재 추천할 수 있는 저장 공고가 없어요.")
-        if st.button("새로고침"):
-            load_recommendation(force=True)
-            st.rerun()
         return
 
     render_recommendation(recommendation)

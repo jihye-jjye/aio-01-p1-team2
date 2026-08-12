@@ -1,5 +1,6 @@
 from html import escape
 import json
+from pathlib import Path
 
 import streamlit as st
 
@@ -20,6 +21,12 @@ PROFILE_FIELDS = {
     "daily_notification_time": ("⏰", "알림 시간"),
     "assistant_style": ("🤖", "AI 답변 스타일"),
 }
+
+ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
+LEVEL_1_CHARACTER_IMAGE = ASSETS_DIR / "character_level_1.png"
+LEVEL_2_CHARACTER_IMAGE = ASSETS_DIR / "character_level_2.png"
+LEVEL_3_CHARACTER_IMAGE = ASSETS_DIR / "character_level_3.png"
+LEVEL_4_CHARACTER_IMAGE = ASSETS_DIR / "character_level_4.png"
 
 
 def apply_profile_style() -> None:
@@ -118,7 +125,7 @@ def render_profile_cards(profile: dict) -> None:
 
 
 def render_character_slot(profile: dict) -> None:
-    """추후 4단계 캐릭터 이미지를 넣을 왼쪽 영역을 표시합니다."""
+    """진단 점수에 맞는 성장 단계 캐릭터를 표시합니다."""
 
     # 백엔드의 100점 만점 진단 점수를 임시 기준으로 4개 구간에 나눕니다.
     # 팀에서 점수 구간을 확정하면 아래 숫자만 변경하면 됩니다.
@@ -130,22 +137,54 @@ def render_character_slot(profile: dict) -> None:
 
     if numeric_score <= 25:
         level_label = "1단계 · 새싹"
+        character_image = LEVEL_1_CHARACTER_IMAGE
+        character_background = "#dce1e7"
     elif numeric_score <= 50:
         level_label = "2단계 · 성장"
+        character_image = LEVEL_2_CHARACTER_IMAGE
+        character_background = "#d9dce3"
     elif numeric_score <= 75:
         level_label = "3단계 · 도전"
+        character_image = LEVEL_3_CHARACTER_IMAGE
+        character_background = "#d9dce3"
     else:
         level_label = "4단계 · 전문가"
+        character_image = LEVEL_4_CHARACTER_IMAGE
+        character_background = "#d9dce3"
 
-    st.markdown(
-        """
-        <div class="character-slot">
-            <div class="character-placeholder">🧑‍💻</div>
-            <div class="character-caption">캐릭터 이미지 영역</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # 준비된 단계 이미지는 Streamlit 기본 이미지 요소로 보여 줍니다.
+    # 파일을 찾지 못한 경우에만 기존 자리 표시를 사용합니다.
+    if character_image and character_image.exists():
+        # 이미지 가장자리와 카드 사이가 끊겨 보이지 않도록
+        # 원본 이미지에서 확인한 배경색을 캐릭터 카드에도 사용합니다.
+        st.markdown(
+            f"""
+            <style>
+            .st-key-profile_character_card {{
+                background: {character_background} !important;
+                padding: 8px !important;
+                border-radius: 10px;
+                overflow: hidden;
+            }}
+            .st-key-profile_character_card div[data-testid="stImage"] {{
+                margin: 0 !important;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.container(border=True, key="profile_character_card"):
+            st.image(str(character_image), use_container_width=True)
+    else:
+        st.markdown(
+            """
+            <div class="character-slot">
+                <div class="character-placeholder">🧑‍💻</div>
+                <div class="character-caption">캐릭터 이미지 준비 중</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     st.markdown(
         f'<div class="character-level">{escape(level_label)}</div>',
         unsafe_allow_html=True,

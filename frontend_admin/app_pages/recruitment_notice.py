@@ -1,6 +1,14 @@
 import streamlit as st
 from core.api_client import BackendAPIError, request
 from clients.recruitment_notice_client import get_recruitment_notice_process
+from core.styles import page_header
+from core.datetime_format import format_created_at
+
+page_header(
+    "RECRUITMENT MANAGEMENT",
+    "채용공고 관리",
+    "채용공고 관련 정보를 확인하세요",
+)
 
 try:
     response = get_recruitment_notice_process()
@@ -15,7 +23,7 @@ try:
             headers = ["ID", "회사명", "직무", "경력", "마감일", "플랫폼", "관리"]
 
             for col, header in zip(header_cols, headers):
-                col.markdown(f"**{header}**")
+                col.markdown(f'<div class="table-head">{header}</div>', unsafe_allow_html=True)
 
             st.divider()
 
@@ -26,7 +34,7 @@ try:
                 row_cols[1].write(item["company_name"])
                 row_cols[2].write(item["job_title"])
                 row_cols[3].write(item["extracted_data"]["career"])
-                row_cols[4].write(item["deadline"] if item["deadline"] is not None else "상시모집")
+                row_cols[4].write(format_created_at(item["deadline"] if item["deadline"] is not None else "상시모집"))
                 row_cols[5].write(item["extracted_data"]["platform"])
 
                 # 마지막 '관리' 컬럼

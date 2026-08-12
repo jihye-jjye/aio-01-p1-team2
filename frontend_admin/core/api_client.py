@@ -1,60 +1,20 @@
 """모든 메뉴 API에서 공통으로 사용하는 HTTP 요청 기능."""
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
 from typing import Any
 
 import httpx
-import streamlit as st
 from dotenv import load_dotenv
+from streamlit_session_browser_storage import SessionStorage
 
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+BACKEND_USER_URL = "https://aio-01-p1-team2-1.onrender.com/api/v1"
+BACKEND_ADMIN_URL = "https://aio-01-p1-team2.onrender.com/api/v1"
 
-DEFAULT_BACKEND_USER_URL = "https://aio-01-p1-team2-1.onrender.com/api/v1"
-DEFAULT_BACKEND_ADMIN_URL = "https://aio-01-p1-team2.onrender.com/api/v1"
-
-BACKEND_USER_URL = (
-    os.getenv("BACKEND_USER_URL") or DEFAULT_BACKEND_USER_URL
-).rstrip("/")
-BACKEND_ADMIN_URL = (
-    os.getenv("BACKEND_ADMIN_URL") or DEFAULT_BACKEND_ADMIN_URL
-).rstrip("/")
 REQUEST_TIMEOUT = 60.0
-
 
 class BackendAPIError(Exception):
     """백엔드 연결 또는 API 응답 처리 중 발생한 오류입니다."""
-
-
-def _backend_url_for(role: str | None) -> str:
-    if role in (None, "USER"):
-        return BACKEND_USER_URL.rstrip("/")
-    if role == "ADMIN":
-        return BACKEND_ADMIN_URL.rstrip("/")
-    raise BackendAPIError(f"지원하지 않는 백엔드 역할입니다: {role}")
-
-
-def _error_detail(response: httpx.Response) -> str:
-    try:
-        payload = response.json()
-    except ValueError:
-        return response.text.strip() or "오류 상세 정보가 없습니다."
-
-    if isinstance(payload, dict):
-        detail = payload.get("detail") or payload.get("message")
-        if isinstance(detail, list):
-            messages = [
-                item.get("msg", str(item)) if isinstance(item, dict) else str(item)
-                for item in detail
-            ]
-            return "; ".join(messages)
-        if detail:
-            return str(detail)
-
-    return str(payload)
-
 
 def request(
     method: str,
@@ -66,20 +26,24 @@ def request(
     role: str | None = None,
     auth_required: bool = True,
 ) -> Any:
-    """선택한 백엔드로 요청하고 JSON 응답을 반환합니다."""
+    """선택한 백엔드로 요청z하고 JSON 응답을 반환합니다."""
+    storage = SessionStorage()
+    if role == "ADMIN":
+        backend_url = BACKEND_ADMIN_URL
+    else :
+        backend_url = BACKEND_USER_URL
 
-    backend_url = _backend_url_for(role)
-    normalized_path = f"/{path.lstrip('/')}"
+    # normalized_path = f"/{path.lstrip('/')}"
     headers: dict[str, str] = {}
 
-    if auth_required:
-        token = getattr(st.session_state, "access_token", "")
+    if auth_required:        
+        token = storage.getItem("access_token") or ""
         headers["Authorization"] = f"Bearer {token}"
 
     try:
         response = httpx.request(
             method,
-            f"{backend_url}{normalized_path}",
+            f"{backend_url}{path}",
             json=json,
             data=data,
             files=files,
@@ -97,7 +61,6 @@ def request(
     if not 200 <= response.status_code < 300:
         raise BackendAPIError(
             f"백엔드 요청 실패 (HTTP {response.status_code}): "
-            f"{_error_detail(response)}"
         )
 
     if response.status_code == 204 or not response.content:

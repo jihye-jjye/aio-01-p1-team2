@@ -64,6 +64,7 @@ def request(
     params: dict[str, Any] | None = None,
     *,
     auth_required: bool = True,
+    clear_auth_on_unauthorized: bool = True,
     timeout: float = REQUEST_TIMEOUT,
 ) -> Any:
     """요청 성공 시 JSON을, 실패 시 ``BackendAPIError``를 반환합니다."""
@@ -122,6 +123,6 @@ def request(
         details=error_body.get("details") or {},
     )
     # 401은 토큰이 없거나 만료된 상태이므로 로그인 정보를 삭제합니다.
-    if response.status_code == 401:
+    if response.status_code == 401 and clear_auth_on_unauthorized:
         clear_auth_state()
     raise api_error

@@ -220,7 +220,11 @@ def apply_onboarding_style() -> None:
         <style>
         #MainMenu, footer, header { visibility: hidden; }
         .stApp { background: #080b16; color: #f4f0f7; }
-        .block-container { max-width: 1050px; padding-top: 2rem; }
+        .block-container {
+            max-width: 1050px;
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+        }
         .terminal-header {
             padding: 15px 20px; color: #f1b1dc; border: 1px solid #50314f;
             border-radius: 7px 7px 0 0; font-family: monospace;
@@ -233,12 +237,21 @@ def apply_onboarding_style() -> None:
             margin-top: 12px; padding: 18px; border: 1px solid #353247;
             border-radius: 12px; background: rgba(8,11,22,.72);
         }
+        .st-key-onboarding_chat_panel {
+            padding: 14px 14px 12px !important;
+            border: 1px solid #353247 !important;
+            border-radius: 12px !important;
+            box-sizing: border-box !important;
+            overflow: visible !important;
+        }
         div[data-testid="stChatMessage"] {
-            max-width: 78%; padding: 8px 12px; margin-bottom: 10px;
+            max-width: 78%; padding: 8px 12px; margin: 2px 2px 10px;
             border: 1px solid #353247; border-radius: 9px; background: #111521;
+            box-sizing: border-box; overflow: visible;
         }
         div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-            margin-left: auto; background: #15152d; border-color: #3f3d72;
+            margin-left: auto; margin-right: 2px;
+            background: #15152d; border-color: #3f3d72;
         }
         /* AI 질문·사용자 답변·AI 결과 텍스트를 밝은 핑크로 고정합니다. */
         div[data-testid="stChatMessage"] p,
@@ -260,14 +273,30 @@ def apply_onboarding_style() -> None:
         div[data-testid="stChatMessage"] [data-testid="stChatMessageAvatarUser"] {
             background: #75329b;
         }
+        /* 화면 높이에 맞춰 메시지 스크롤 영역을 조절해 입력창이 잘리지 않게 합니다. */
+        .st-key-onboarding_message_scroll {
+            height: clamp(230px, 40vh, 340px) !important;
+            min-height: 230px !important;
+            padding: 4px 6px !important;
+            box-sizing: border-box !important;
+        }
+        .st-key-onboarding_waiting_area {
+            height: 48px !important;
+            min-height: 48px !important;
+        }
         div[data-testid="stChatInput"] {
-            width: 100%; margin: 0; padding: 8px 0 0;
+            width: 100%; max-width: 100%; margin: 0;
+            padding: 8px 2px 2px;
             background: #080b16 !important;
+            box-sizing: border-box !important;
+            overflow: visible !important;
         }
         div[data-testid="stChatInput"] > div {
-            min-height: 48px; background: #0d101b !important;
+            width: 100%; min-height: 48px; background: #0d101b !important;
             border: 1px solid #363449;
             border-radius: 8px;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
         }
         /* Streamlit이 chat_input 바깥에 자동으로 만드는 흰색 wrapper를 숨깁니다. */
         div[data-testid="stChatInput"] > div > div {
@@ -309,6 +338,12 @@ def apply_onboarding_style() -> None:
         .assessment-value { color: #ffffff; font-size: 17px; font-weight: 900; }
         @media (max-width: 720px) {
             .assessment-card { align-items: flex-start; flex-direction: column; gap: 7px; }
+            .block-container { padding-top: .6rem; }
+            .st-key-onboarding_message_scroll {
+                height: 230px !important;
+                min-height: 230px !important;
+            }
+            div[data-testid="stChatMessage"] { max-width: 92%; }
         }
         </style>
         """,
@@ -365,7 +400,11 @@ def render_message_scroll() -> None:
     """저장된 AI 질문과 사용자 답변을 스크롤 가능한 영역에 표시합니다."""
 
     # 수업에서 사용한 Streamlit 기본 컨테이너와 chat_message로 대화를 표시합니다.
-    with st.container(height=410, border=False):
+    with st.container(
+        height=320,
+        border=False,
+        key="onboarding_message_scroll",
+    ):
         for message in st.session_state.onboarding_messages:
             role = message["role"]
             # 사용자는 Streamlit 기본 user 아바타를 사용해야 오른쪽 정렬 CSS가 정확히 적용됩니다.
@@ -414,7 +453,7 @@ def render_conversation(latest: dict, message_area) -> None:
     """대화 단계의 메시지와 답변 입력 폼을 표시합니다."""
 
     # 메시지와 입력창을 같은 테두리 안에 넣어 하나의 채팅 화면처럼 보이게 합니다.
-    with st.container(border=True):
+    with st.container(border=True, key="onboarding_chat_panel"):
         render_message_scroll()
 
         choices = latest.get("choices") or []
@@ -422,7 +461,11 @@ def render_conversation(latest: dict, message_area) -> None:
             st.caption("선택 예시: " + " · ".join(choices))
 
         # 대기 말풍선의 높이를 미리 확보해 로딩 중에도 입력창이 밀리지 않게 합니다.
-        assistant_waiting_area = st.container(height=72, border=False)
+        assistant_waiting_area = st.container(
+            height=48,
+            border=False,
+            key="onboarding_waiting_area",
+        )
 
         # 컨테이너 안에서 사용하면 입력창이 페이지 하단이 아닌 대화 바로 아래 표시됩니다.
         text = st.chat_input(
@@ -584,7 +627,6 @@ def render_completed(latest: dict, message_area) -> None:
     st.session_state.jobs_loaded = False
     st.session_state.recommended_job = None
     st.session_state.jobs_error = None
-    st.session_state.plan_update_preview = None
 
     st.caption("완성된 프로필을 기준으로 AI가 지금 가장 잘 맞는 공고를 찾아드려요.")
     if st.button(
