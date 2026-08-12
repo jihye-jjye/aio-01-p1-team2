@@ -1,7 +1,8 @@
 import streamlit as st
 from streamlit_session_browser_storage import SessionStorage
 
-from core.auth import is_logged_in, logout
+from core.auth_service import logout
+from core.session_storage import is_logged_in
 
 st.set_page_config(
     page_title="취업 관리 MAP 관리자",

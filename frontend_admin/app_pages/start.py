@@ -1,6 +1,7 @@
 import streamlit as st
 
-from core.auth import is_logged_in, login
+from core.auth_service import login
+from core.session_storage import is_logged_in
 
 if is_logged_in():
     st.switch_page("app_pages/dashboard.py")
