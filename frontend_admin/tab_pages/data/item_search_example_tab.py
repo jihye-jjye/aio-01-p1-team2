@@ -1,9 +1,9 @@
 """item 조회 관련 페이지가 실질적으로 뿌려지는 부분이다."""
 import streamlit as st
-from frontend_user.core.auth_sample import is_logged_in
+from core.auth_sample import is_logged_in
 from core.api_client import BACKEND_URL, BackendAPIError
-from frontend_user.core.datetime_format import format_created_at
-from frontend_user.clients.example_client import delete_item, get_item, get_items, update_item, search_item
+from core.datetime_format import format_created_at
+from clients.example_client import delete_item, get_item, get_items, update_item, search_item
 
 def get_image_url(item: dict) -> str | None:
     image_url = item.get("image_url")

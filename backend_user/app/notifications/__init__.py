@@ -1,0 +1,1 @@
+"""Authenticated login notification feed."""

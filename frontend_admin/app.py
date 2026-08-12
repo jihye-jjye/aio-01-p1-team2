@@ -1,10 +1,10 @@
 import streamlit as st
 
-from frontend_user.core.auth_sample import init_state, is_logged_in, login, logout
+from core.auth import init_state, is_logged_in, logout
 
 
 st.set_page_config(
-    page_title="Multi Tab",
+    page_title="취업 관리 MAP 관리자",
     page_icon="📚",
     layout="wide",
 )
@@ -12,61 +12,83 @@ st.set_page_config(
 init_state()
 
 start_page = st.Page(
-    "app_pages/01_start.py",
-    title="시작",
+    "app_pages/start.py",
+    title="대쉬",
     icon="🏠",
     default=True,
 )
-data_page = st.Page(
-    "app_pages/03_data.py",
-    title="데이터",
+
+user_management_page = st.Page(
+    "app_pages/user_management.py",
+    title="사용자 관리",
+    icon="🗃️",
+)
+
+dashboard_page = st.Page(
+    "app_pages/dashboard.py",
+    title="대시보드",
     icon="📊",
 )
 
-select_page = st.Page(
-    "app_pages/05_select.py",
-    title="조회",
-    icon="🔍",
+user_management_detail_page = st.Page(
+    "app_pages/user_management_detail.py",
+    title="사용자 관리 상세보기",
+    icon="🗃️",
 )
 
-chatbot_page = st.Page(
-    "app_pages/07_chat.py",
-    title="Chat",
-    icon="🤖",
+loadmap_page = st.Page(
+    "app_pages/loadmap.py",
+    title="로드맵 관리",
+    icon="🧭",
+)
+
+notice_page = st.Page(
+    "app_pages/notice.py",
+    title="공지사항",
+    icon="🪧",
+)
+
+notice_detail_page = st.Page(
+    "app_pages/notice_detail.py",
+    title="공지사항 상세보기",
+    icon="🪧",
+)
+
+recruitment_notice_page = st.Page(
+    "app_pages/recruitment_notice.py",
+    title="채용공고 관리",
+    icon="",
+)
+
+recruitment_notice_detail_page = st.Page(
+    "app_pages/recruitment_notice_detail.py",
+    title="채용공고 등록/편집",
+    icon="",
 )
 
 navigation = st.navigation(
-    [start_page, data_page, select_page, chatbot_page],
+    [start_page, dashboard_page, user_management_page, user_management_detail_page, notice_page, loadmap_page, notice_detail_page,
+     recruitment_notice_page,recruitment_notice_detail_page
+     ],
     position="hidden",
 )
 
 with st.sidebar:
-    st.title("Multi Tab")
-    st.page_link(start_page)
-    st.page_link(data_page)
-    st.page_link(select_page)
-    st.divider()
-
-    if is_logged_in():
-        st.success("로그인 중")
-        st.write(f"사용자 ID : {st.session_state.user_id}")
-        st.page_link(chatbot_page)
-        st.button("로그아웃", on_click=logout)
+    st.title("취업관리 MAP")   
+    
+    if is_logged_in():        
+        st.page_link(dashboard_page)
+        st.page_link(user_management_page)
+        st.page_link(loadmap_page)
+        st.page_link(notice_page)
+        st.page_link(recruitment_notice_page)
+        if st.button("로그아웃") :
+            logout()
+            st.switch_page(start_page)
+        
+        st.divider()
     else:
-        st.caption("연습 계정: id01 / pwd01")
-
-        with st.form("sidebar_login_form"):
-            user_id = st.text_input("아이디", value="id01")
-            password = st.text_input("비밀번호", type="password", value="pwd01")
-            submitted = st.form_submit_button(
-                "로그인",
-                use_container_width=True,
-            )
-
-        if submitted:
-            if login(user_id, password):
-                st.rerun()
-            else:
-                st.error("로그인 정보가 올바르지 않습니다.")
+        # st.page_link(start_page)    
+        st.text("로그인 하여 관리자 기능을 이용하세요.")
 
 navigation.run()
