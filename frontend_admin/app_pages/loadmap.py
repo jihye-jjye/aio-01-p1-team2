@@ -11,7 +11,6 @@ from core.api_client import BackendAPIError
 
 RESULT_STATE_KEY = "admin_roadmap_lookup_result"
 
-
 def _validate_response(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise BackendAPIError("로드맵 응답 형식이 올바르지 않습니다.")
