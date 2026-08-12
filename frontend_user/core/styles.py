@@ -3,6 +3,38 @@
 import streamlit as st
 
 
+def apply_user_page_background() -> None:
+    """로그인 이후 주요 사용자 페이지에 같은 밝은 배경을 적용합니다."""
+
+    st.markdown(
+        """
+        <style>
+        /* 로그인 이후 주요 사용자 페이지의 Streamlit 기본 상단 바를 숨깁니다. */
+        header[data-testid="stHeader"] {
+            display: none !important;
+        }
+        .block-container {
+            padding-top: 2.5rem !important;
+        }
+        .stApp {
+            background: #f5f7fb;
+            color: #111827;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_page_header(eyebrow: str, title: str, description: str) -> None:
+    """사용자 기능 페이지에서 공통으로 사용하는 상단 제목을 표시합니다."""
+
+    # HTML을 만들지 않고 Streamlit 기본 제목 요소만 사용합니다.
+    st.caption(eyebrow)
+    st.title(title)
+    st.caption(description)
+
+
 def apply_global_button_style() -> None:
     """모든 페이지의 버튼을 다크모드용 보라·분홍 색상으로 통일합니다."""
 

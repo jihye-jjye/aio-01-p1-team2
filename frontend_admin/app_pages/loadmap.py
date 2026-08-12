@@ -8,8 +8,12 @@ import streamlit as st
 
 from clients.loadmap_client import loadmap_from_user
 from core.api_client import BackendAPIError
+from core.auth import is_logged_in
+from core.styles import page_header
+
 
 RESULT_STATE_KEY = "admin_roadmap_lookup_result"
+
 
 def _validate_response(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
@@ -68,44 +72,49 @@ def _render_roadmap(payload: dict[str, Any]) -> None:
                     for quest in quests
                     if isinstance(quest, dict)
                 ]
-                st.dataframe(
-                    quest_rows,
-                    hide_index=True,
-                    use_container_width=True,
-                )
+                st.dataframe(quest_rows, hide_index=True, use_container_width=True)
             else:
                 st.caption("이 로드맵에 등록된 퀘스트가 없습니다.")
 
 
-st.markdown(
-    '<div class="breadcrumb">대시보드 〉 로드맵 관리</div>',
-    unsafe_allow_html=True,
+if not is_logged_in():
+    st.warning("관리자 로그인이 필요한 페이지입니다.")
+    if st.button("관리자 로그인으로 이동", type="primary"):
+        st.switch_page("app_pages/start.py")
+    st.stop()
+
+page_header(
+    "ROADMAP MANAGEMENT",
+    "로드맵 관리",
+    "사용자별 로드맵과 진행 현황을 조회하는 관리자 영역입니다.",
 )
-st.subheader("로드맵 관리", divider="rainbow")
-st.caption("회원가입 시 사용한 로그인 아이디로 로드맵 이력을 조회합니다.")
 
-default_login_id = st.session_state.get("selected_item_login_id", "")
-with st.form("admin-roadmap-search"):
-    login_id = st.text_input(
-        "대상 사용자 로그인 아이디",
-        value=default_login_id,
-        placeholder="예: roadmap_user",
-    )
-    submitted = st.form_submit_button("로드맵 조회", type="primary")
+with st.container(border=True):
+    st.subheader("사용자 로드맵 조회")
+    st.caption("회원가입 시 사용한 로그인 아이디로 로드맵 이력을 조회합니다.")
 
-if submitted:
-    normalized_login_id = login_id.strip()
-    if not normalized_login_id:
-        st.warning("조회할 사용자 로그인 아이디를 입력해 주세요.")
-        st.session_state.pop(RESULT_STATE_KEY, None)
-    else:
-        try:
-            with st.spinner("로드맵을 조회하고 있습니다..."):
-                response = loadmap_from_user(normalized_login_id)
-            st.session_state[RESULT_STATE_KEY] = _validate_response(response)
-        except BackendAPIError as error:
+    default_login_id = st.session_state.get("selected_item_login_id", "")
+    with st.form("admin-roadmap-search"):
+        login_id = st.text_input(
+            "대상 사용자 로그인 아이디",
+            value=default_login_id,
+            placeholder="예: roadmap_user",
+        )
+        submitted = st.form_submit_button("로드맵 조회", type="primary")
+
+    if submitted:
+        normalized_login_id = login_id.strip()
+        if not normalized_login_id:
+            st.warning("조회할 사용자 로그인 아이디를 입력해 주세요.")
             st.session_state.pop(RESULT_STATE_KEY, None)
-            st.error(str(error))
+        else:
+            try:
+                with st.spinner("로드맵을 조회하고 있습니다..."):
+                    response = loadmap_from_user(normalized_login_id)
+                st.session_state[RESULT_STATE_KEY] = _validate_response(response)
+            except BackendAPIError as error:
+                st.session_state.pop(RESULT_STATE_KEY, None)
+                st.error(str(error))
 
 result = st.session_state.get(RESULT_STATE_KEY)
 if isinstance(result, dict):
