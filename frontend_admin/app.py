@@ -1,7 +1,7 @@
 import streamlit as st
+from streamlit_session_browser_storage import SessionStorage
 
-from core.auth import init_state, is_logged_in, logout
-
+from core.auth import is_logged_in, logout
 
 st.set_page_config(
     page_title="취업 관리 MAP 관리자",
@@ -9,7 +9,14 @@ st.set_page_config(
     layout="wide",
 )
 
-init_state()
+storage = SessionStorage()
+if st.session_state.get("access_token"):
+    storage.setItem("login_id", st.session_state.get("user_id", ""), key="save_login_id")
+    storage.setItem(
+        "access_token",
+        st.session_state.access_token,
+        key="save_access_token",
+    )
 
 start_page = st.Page(
     "app_pages/start.py",
@@ -87,8 +94,7 @@ with st.sidebar:
             st.switch_page(start_page)
         
         st.divider()
-    else:
-        # st.page_link(start_page)    
+    else:   
         st.text("로그인 하여 관리자 기능을 이용하세요.")
 
 navigation.run()

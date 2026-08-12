@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-import streamlit as st
 from dotenv import load_dotenv
+from streamlit_session_browser_storage import SessionStorage
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
@@ -55,6 +55,7 @@ def _error_detail(response: httpx.Response) -> str:
 
     return str(payload)
 
+storage = SessionStorage()
 
 def request(
     method: str,
@@ -66,14 +67,14 @@ def request(
     role: str | None = None,
     auth_required: bool = True,
 ) -> Any:
-    """선택한 백엔드로 요청하고 JSON 응답을 반환합니다."""
+    """선택한 백엔드로 요청z하고 JSON 응답을 반환합니다."""
 
     backend_url = _backend_url_for(role)
     normalized_path = f"/{path.lstrip('/')}"
     headers: dict[str, str] = {}
 
-    if auth_required:
-        token = getattr(st.session_state, "access_token", "")
+    if auth_required:        
+        token = storage.getItem("access_token") or ""
         headers["Authorization"] = f"Bearer {token}"
 
     try:

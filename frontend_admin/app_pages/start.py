@@ -1,7 +1,9 @@
 import streamlit as st
 
-from tab_pages.start.home_tab import show_home
-from core.auth import login
+from core.auth import is_logged_in, login
+
+if is_logged_in():
+    st.switch_page("app_pages/dashboard.py")
 
 st.subheader("관리자 로그인")
 
@@ -14,7 +16,9 @@ with st.form("signup_form"):
     if submitted:
         if admin_id and password:
             response = login(admin_id, password)
-            # if response and response["access_token"] is not None:
-            st.switch_page("app_pages/dashboard.py")
+            if response and response.get("access_token"):
+                st.switch_page("app_pages/dashboard.py")
+            else:
+                st.error("로그인에 실패했습니다.")            
         else:
             st.warning("모든 항목을 입력해 주세요.")
