@@ -1,13 +1,13 @@
 """모든 메뉴 API에서 공통으로 사용하는 HTTP 요청 기능."""
 
 import os
-import httpx
 from typing import Any
+
+import httpx
 import streamlit as st
 
-# BACKEND_URL = "http://127.0.0.1:8000"
-BACKEND_USER_URL = "https://aio-01-p1-team2-1.onrender.com/api/v1" # 사용자 서버
-BACKEND_AMDIN_URL = "https://aio-01-p1-team2.onrender.com/api/v1" # 관리자 서버
+BACKEND_USER_URL = "https://aio-01-p1-team2-1.onrender.com/api/v1"
+BACKEND_AMDIN_URL = "https://aio-01-p1-team2.onrender.com/api/v1"
 REQUEST_TIMEOUT = 60.0
 
 class BackendAPIError(Exception):
@@ -30,19 +30,18 @@ def request(method: str,
             BACKEND_URL = BACKEND_AMDIN_URL
         else :
             BACKEND_URL = BACKEND_USER_URL
-
-        if auth_required:
-            token = st.session_state.access_token
-            headers["Authorization"] = f"Bearer {token}"
-
+        headers = {"Accept": "application/json"}
+        access_token = st.session_state.get("access_token")
+        if auth_required and access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
         response = httpx.request(
             method,
             f"{BACKEND_URL}{path}",
+            headers=headers,
             json=json,
             data=data,
             files=files,        
-            params=params,  
-            headers=headers,
+            params=params,
             timeout=REQUEST_TIMEOUT,
         )
     except httpx.TimeoutException as error:
@@ -65,6 +64,17 @@ def request(method: str,
             "ID가 사용 중 입니다."
         )
    
+    if not response.is_success:
+        try:
+            error_payload = response.json().get("error", {})
+            message = error_payload.get("message")
+        except (ValueError, AttributeError):
+            message = None
+        raise BackendAPIError(message or f"요청 처리에 실패했습니다. ({response.status_code})")
+
+    if response.status_code == 204 or not response.content:
+        return None
+
     try:
         payload = response.json()
     except ValueError as error:

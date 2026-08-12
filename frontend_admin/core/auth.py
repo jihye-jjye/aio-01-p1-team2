@@ -28,6 +28,5 @@ def logout() -> None:
     st.session_state.user_id = ""
 
 def is_logged_in() -> bool:
-    # return True
     return bool(st.session_state.access_token)
 

@@ -1,6 +1,7 @@
 """로그인한 사용자의 취업 준비 현황을 모아 보여주는 대시보드입니다."""
 
 from datetime import date
+from pathlib import Path
 
 import streamlit as st
 
@@ -13,6 +14,15 @@ from core.session import is_logged_in
 from core.styles import apply_user_page_background, render_page_header
 
 
+ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
+CHARACTER_IMAGES = {
+    1: ASSETS_DIR / "character_level_1.png",
+    2: ASSETS_DIR / "character_level_2.png",
+    3: ASSETS_DIR / "character_level_3.png",
+    4: ASSETS_DIR / "character_level_4.png",
+}
+
+
 def clamp_percent(value: object) -> int:
     """진행률을 0부터 100 사이의 정수로 바꿉니다."""
 
@@ -22,19 +32,19 @@ def clamp_percent(value: object) -> int:
         return 0
 
 
-def get_character_level(profile: dict) -> tuple[str, str]:
-    """AI 진단 점수를 임시 4단계 캐릭터 상태로 바꿉니다."""
+def get_character_level(profile: dict) -> tuple[Path, str, str]:
+    """AI 진단 점수를 캐릭터 이미지, 단계명, 배경색으로 바꿉니다."""
 
     # 프로필 페이지와 같은 임시 기준입니다.
     # 실제 캐릭터 이미지와 점수 기준이 확정되면 이 부분만 변경하면 됩니다.
     score = clamp_percent(profile.get("assessment_score"))
     if score <= 25:
-        return "🌱", "1단계 · 새싹"
+        return CHARACTER_IMAGES[1], "1단계 · 새싹", "#dce1e7"
     if score <= 50:
-        return "🌿", "2단계 · 성장"
+        return CHARACTER_IMAGES[2], "2단계 · 성장", "#d9dce3"
     if score <= 75:
-        return "🔥", "3단계 · 도전"
-    return "🏆", "4단계 · 전문가"
+        return CHARACTER_IMAGES[3], "3단계 · 도전", "#d9dce3"
+    return CHARACTER_IMAGES[4], "4단계 · 전문가", "#d9dce3"
 
 
 def get_d_day(target_date: object) -> str:
@@ -78,15 +88,33 @@ def render_header(profile: dict) -> None:
     user = st.session_state.get("user") or {}
     # 백엔드 GET /auth/me에 user_name이 없는 동안은 login_id를 안전한 대체값으로 사용합니다.
     user_name = user.get("user_name") or user.get("login_id") or "사용자"
-    character, level = get_character_level(profile)
+    character_image, level, character_background = get_character_level(profile)
 
     with st.container(border=True):
         character_column, greeting_column, profile_column = st.columns(
             [0.7, 4, 1.2],
             vertical_alignment="center",
         )
-        # 추후 취업 프로필의 성장 단계별 캐릭터 GIF로 교체할 영역입니다.
-        character_column.markdown(f"# {character}")
+        with character_column:
+            # 프로필 페이지와 같은 원본 캐릭터와 배경색을 사용합니다.
+            st.markdown(
+                f"""
+                <style>
+                .st-key-dashboard_character_card {{
+                    padding: 4px;
+                    overflow: hidden;
+                    border-radius: 10px;
+                    background: {character_background};
+                }}
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            with st.container(key="dashboard_character_card"):
+                if character_image.exists():
+                    st.image(str(character_image), use_container_width=True)
+                else:
+                    st.markdown("## 🤖")
         greeting_column.subheader(f"안녕하세요, {user_name}님 👋")
         greeting_column.caption(f"{level} · 오늘도 한 칸 성장해 볼까요?")
 

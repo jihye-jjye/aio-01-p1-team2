@@ -7,6 +7,7 @@ import streamlit as st
 from clients.auth_client import delete_me, update_me
 from core.api_client import BackendAPIError
 from core.session import clear_auth_state, is_logged_in, persist_auth_state
+from core.styles import apply_user_page_background, render_page_header
 
 
 LOGIN_ID_PATTERN = re.compile(r"^[a-z0-9._-]{4,50}$")
@@ -128,15 +129,20 @@ def render_delete_account() -> None:
 def main() -> None:
     """사용자 정보 수정 화면을 표시합니다."""
 
+    # 로그인 이후 다른 사용자 페이지와 같은 배경과 상단 간격을 사용합니다.
+    apply_user_page_background()
+
     if not is_logged_in():
         st.warning("로그인이 필요한 페이지입니다.")
         if st.button("로그인으로 이동", type="primary"):
             st.switch_page("app_pages/login.py")
         return
 
-    st.caption("ACCOUNT SETTINGS")
-    st.title("사용자 정보 수정")
-    st.caption("로그인 아이디와 서비스에서 사용할 이름을 변경할 수 있어요.")
+    render_page_header(
+        "ACCOUNT SETTINGS",
+        "사용자 정보 수정",
+        "로그인 아이디와 서비스에서 사용할 이름을 변경할 수 있어요.",
+    )
 
     flash_message = st.session_state.pop("account_settings_flash", None)
     if flash_message:
